@@ -1,5 +1,6 @@
 -- ══════════════════════════════════════════════════════════════════
 --  EGG SCANNER GUI  v12d  (flight + auto-claim + EXACT multi-hop drop)
+--  • ⭐ Master ON/OFF toggle in the toolbar (starts OFF)
 --  • Draggable, minimize, auto-fit, live 3s refresh
 --  • FLY button → BodyVelocity flight at 300/s + auto-claim via UID
 --  • DropHeldEgg enabled → EXACT hop pattern → drop remote
@@ -20,7 +21,7 @@ local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 --  CONFIG
 -- ────────────────────────────────────────────────────────────────
 local CONFIG = {
-	FlySpeed          = 300,   -- ⭐ changed from 220 to 300
+	FlySpeed          = 300,
 	ArriveRadius      = 5,
 	MaxFlyTime        = 20,
 	LandOffset        = Vector3.new(6, 3, 6),
@@ -501,6 +502,11 @@ end
 -- ⭐ Forward declarations
 local gui, main
 
+-- ⭐⭐⭐ MASTER POWER SWITCH — OFF by default
+-- Nothing runs (no flight, no hop, no drop remote, no auto-refresh)
+-- until the player presses the POWER button.
+local scriptEnabled = false
+
 -- ────────────────────────────────────────────────────────────────
 --  TOAST
 -- ────────────────────────────────────────────────────────────────
@@ -511,7 +517,7 @@ local function showToast(msg, color)
 		Name = "Toast",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -8),
-		Size = UDim2.new(0, 220, 0, 28),
+		Size = UDim2.new(0, 240, 0, 28),
 		BackgroundColor3 = color or C.good,
 		BorderSizePixel = 0,
 		Font = Enum.Font.GothamBold,
@@ -555,6 +561,10 @@ end
 --  BODY-VELOCITY FLIGHT  (to egg)
 -- ────────────────────────────────────────────────────────────────
 local function flyCharacterTo(targetCFrame, claimUid)
+	if not scriptEnabled then
+		showToast("⚠️ Scanner is OFF", C.warn)
+		return
+	end
 	if not targetCFrame or isFlying then return end
 
 	local hrp, hum = getHRP()
@@ -603,6 +613,7 @@ local function flyCharacterTo(targetCFrame, claimUid)
 	local arrived = false
 	while isFlying do
 		if not hrp.Parent then break end
+		if not scriptEnabled then break end
 		local cur  = hrp.Position
 		local diff = landPos - cur
 		local dist = diff.Magnitude
@@ -638,7 +649,7 @@ local function flyCharacterTo(targetCFrame, claimUid)
 
 	isFlying = false
 
-	if arrived and claimUid and CONFIG.AutoClaim then
+	if arrived and claimUid and CONFIG.AutoClaim and scriptEnabled then
 		task.wait(CONFIG.ClaimDelay)
 		local ok, err = claimEgg(claimUid)
 		if ok then showToast("✓ Claimed egg", C.good)
@@ -647,6 +658,10 @@ local function flyCharacterTo(targetCFrame, claimUid)
 end
 
 local function returnCharacter()
+	if not scriptEnabled then
+		showToast("⚠️ Scanner is OFF", C.warn)
+		return
+	end
 	if not savedHRP or isFlying then return end
 	local destination  = savedHRP
 	local targetCFrame = CFrame.new(destination.Position)
@@ -660,6 +675,7 @@ end
 --  EXACT MULTI-HOP TO FOREST
 -- ────────────────────────────────────────────────────────────────
 local function multiHopToForest()
+	if not scriptEnabled then return false end
 	if isFlying then
 		if CONFIG.Debug then warn("[EggScanner] multi-hop aborted: isFlying already true") end
 		return false
@@ -711,6 +727,7 @@ local function multiHopToForest()
 
 	for i = 1, #waypoints do
 		if not hrp.Parent then break end
+		if not scriptEnabled then break end
 
 		local wp = waypoints[i]
 		local target = Vector3.new(wp[1], wp[2], z)
@@ -813,6 +830,12 @@ local function watchDropHeldEgg()
 		if not (gui and gui.Parent) then break end
 		if not CONFIG.AutoDrop then continue end
 
+		-- ⭐ Master switch — keep tracking state but don't act
+		if not scriptEnabled then
+			wasEnabled = isDropHeldEggEnabled()
+			continue
+		end
+
 		local enabledNow = isDropHeldEggEnabled()
 		local risingEdge = enabledNow and not wasEnabled
 		wasEnabled = enabledNow
@@ -836,7 +859,7 @@ local function watchDropHeldEgg()
 		local ok = multiHopToForest()
 		if CONFIG.Debug then print("[EggScanner] multiHopToForest returned: " .. tostring(ok)) end
 
-		if ok and isAtForest() then
+		if ok and isAtForest() and scriptEnabled then
 			task.wait(CONFIG.DropSettleDelay)
 			if isAtForest() then
 				local okDrop, err = dropHeldEgg()
@@ -968,7 +991,7 @@ local liveDot = new("Frame", {
 	AnchorPoint = Vector2.new(1, 0.5),
 	Position = UDim2.new(1, -78, 0.5, 0),
 	Size = UDim2.new(0, 8, 0, 8),
-	BackgroundColor3 = C.good,
+	BackgroundColor3 = Color3.fromRGB(70, 70, 82),   -- starts grey (OFF)
 	BorderSizePixel = 0,
 	Parent = topBar,
 })
@@ -993,11 +1016,15 @@ task.spawn(function()
 	local up = true
 	while gui.Parent do
 		up = not up
-		local goal = up and C.good or Color3.fromRGB(70, 140, 90)
-		TweenService:Create(liveDot,
-			TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-			{ BackgroundColor3 = goal }
-		):Play()
+		if scriptEnabled then
+			local goal = up and C.good or Color3.fromRGB(70, 140, 90)
+			TweenService:Create(liveDot,
+				TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+				{ BackgroundColor3 = goal }
+			):Play()
+		else
+			liveDot.BackgroundColor3 = Color3.fromRGB(70, 70, 82)
+		end
 		task.wait(1)
 	end
 end)
@@ -1035,7 +1062,7 @@ local closeBtn = new("TextButton", {
 new("UICorner", { CornerRadius = UDim.new(0, 6), Parent = closeBtn })
 closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 
--- ── Toolbar ──
+-- ── Toolbar (with POWER toggle) ──
 local toolbar = new("Frame", {
 	Name = "Toolbar",
 	Size = UDim2.new(1, 0, 0, 34),
@@ -1044,9 +1071,46 @@ local toolbar = new("Frame", {
 	Parent = main,
 })
 
-local searchBox = new("TextBox", {
+-- ⭐⭐⭐ MASTER POWER BUTTON (leftmost)
+local powerBtn = new("TextButton", {
+	Name = "PowerToggle",
 	Position = UDim2.new(0, 10, 0, 4),
-	Size = UDim2.new(1, -180, 0, 26),
+	Size = UDim2.new(0, 96, 0, 26),
+	BackgroundColor3 = Color3.fromRGB(60, 60, 72),   -- OFF = dark grey
+	Font = Enum.Font.GothamBold,
+	Text = "⏻ SCANNER OFF",
+	TextSize = 11,
+	TextColor3 = Color3.fromRGB(200, 200, 215),
+	BorderSizePixel = 0,
+	AutoButtonColor = true,
+	Parent = toolbar,
+})
+new("UICorner", { CornerRadius = UDim.new(0, 6), Parent = powerBtn })
+new("UIStroke", { Color = Color3.fromRGB(90, 90, 108), Thickness = 1, Parent = powerBtn })
+
+powerBtn.MouseButton1Click:Connect(function()
+	scriptEnabled = not scriptEnabled
+	if scriptEnabled then
+		powerBtn.BackgroundColor3 = C.good
+		powerBtn.Text = "⏻ SCANNER ON"
+		powerBtn.TextColor3 = Color3.new(1, 1, 1)
+		showToast("✓ Scanner ENABLED", C.good)
+		-- immediately refresh so the list is up to date
+		task.spawn(function()
+			task.wait(0.05)
+			if _G.__EggRefresh then _G.__EggRefresh() end
+		end)
+	else
+		powerBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 72)
+		powerBtn.Text = "⏻ SCANNER OFF"
+		powerBtn.TextColor3 = Color3.fromRGB(200, 200, 215)
+		showToast("⏻ Scanner DISABLED", C.dim)
+	end
+end)
+
+local searchBox = new("TextBox", {
+	Position = UDim2.new(0, 112, 0, 4),
+	Size = UDim2.new(1, -282, 0, 26),
 	BackgroundColor3 = C.panel,
 	BorderSizePixel = 0,
 	Font = Enum.Font.Gotham,
@@ -1294,6 +1358,10 @@ local function renderRow(entry)
 
 	if hasCF then
 		flyBtn.MouseButton1Click:Connect(function()
+			if not scriptEnabled then
+				showToast("⚠️ Enable the scanner first", C.warn)
+				return
+			end
 			local live = findEggPart(entry.uid)
 			local cf = live and live.CFrame or entry.cframe
 			entry.cframe = cf
@@ -1354,6 +1422,9 @@ local function refresh()
 	refreshing = false
 end
 
+-- expose for the power toggle to force-refresh
+_G.__EggRefresh = refresh
+
 local searchDebounce
 searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 	if searchDebounce then task.cancel(searchDebounce) end
@@ -1363,17 +1434,18 @@ end)
 returnBtn.MouseButton1Click:Connect(returnCharacter)
 
 -- ────────────────────────────────────────────────────────────────
---  LIVE AUTO-REFRESH
+--  LIVE AUTO-REFRESH  (gated by scriptEnabled)
 -- ────────────────────────────────────────────────────────────────
 task.spawn(function()
 	task.wait(1)
-	refresh()
+	refresh()   -- show the list once on load even before enabling
 end)
 
 if CONFIG.AutoRefresh > 0 then
 	task.spawn(function()
 		while gui.Parent do
 			task.wait(CONFIG.AutoRefresh)
+			if not scriptEnabled then continue end
 			if gui.Parent and not isFlying and not isDropping then
 				refresh()
 			end
@@ -1386,5 +1458,5 @@ end
 -- ────────────────────────────────────────────────────────────────
 task.spawn(watchDropHeldEgg)
 
-print("[EggScanner] v12d loaded (EXACT multi-hop drop @ 300 studs/s). "
+print("[EggScanner] v12d loaded (MASTER TOGGLE — starts OFF). "
 	.. (eggState and "EggState OK" or "EggState MISSING"))
