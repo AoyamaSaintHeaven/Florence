@@ -72,48 +72,34 @@ end
 -- */  Window  /* --
 local Window = WindUI:CreateWindow({
 	Title = "FlorenceArgenty  |  Scott",
-	--Author = "by .ftgs • Footagesus",
 	Folder = "ftgshub",
 	Icon = "rbxassetid://79268589053692",
-	Size = UDim2.fromOffset(580, 460), 
-    MinSize = Vector2.new(560, 350), 
-     MaxSize = Vector2.new(850, 560), 
-   BackgroundImageTransparency = 0.42, 
-    Background = "rbxassetid://79268589053692", 
-    
-	
-	--Theme = "Mellowsi",
-	--IconSize = 22*2,
+	Size = UDim2.fromOffset(580, 460),
+    MinSize = Vector2.new(560, 350),
+    MaxSize = Vector2.new(850, 560),
+    BackgroundImageTransparency = 0.42,
+    Background = "rbxassetid://79268589053692",
 	NewElements = true,
-	--Size = UDim2.fromOffset(700,700),
-
 	HideSearchBar = false,
-
 	OpenButton = {
-		Title = "Florence Argenty/Scott", -- can be changed
-		CornerRadius = UDim.new(1, 0), -- fully rounded
-		StrokeThickness = 3, -- removing outline
-		Enabled = true, -- enable or disable openbutton
+		Title = "Florence Argenty/Scott",
+		CornerRadius = UDim.new(1, 0),
+		StrokeThickness = 3,
+		Enabled = true,
 		Draggable = true,
 		OnlyMobile = false,
 		Scale = 0.5,
-
-		Color = ColorSequence.new( -- gradient
+		Color = ColorSequence.new(
 			Color3.fromHex("#30FF6A"),
 			Color3.fromHex("#e7ff2f")
 		),
 	},
 	Topbar = {
 		Height = 44,
-		ButtonsType = "Mac", -- Default or Mac
+		ButtonsType = "Mac",
 	},
 })
 
---createPopup()
-
---Window:SetUIScale(.8)
-
--- */  Tags  /* --
 do
 	Window:Tag({
 		Title = "v" .. WindUI.Version,
@@ -130,9 +116,6 @@ local Green = Color3.fromHex("#10C550")
 local Grey = Color3.fromHex("#83889E")
 local Blue = Color3.fromHex("#257AF7")
 local Red = Color3.fromHex("#EF4F1D")
-
-
-
 
 -- */ Other Functions /* --
 local function parseJSON(luau_table, indent, level, visited)
@@ -260,8 +243,6 @@ local function tableToClipboard(luau_table, indent)
 	return jsonString
 end
 
-
-
 -- Player Section --
 
 local Tabs = {
@@ -271,15 +252,11 @@ local Tabs = {
     }),
 }
 
-
 Tabs.PlayerTab:Toggle({
     Title = "Noclip",
     Desc = "Pass through the Walls",
     Value = false,
     Callback = function(state)
-        
-    -- functions
-        
     end,
 })
 
@@ -295,50 +272,41 @@ Tabs.PlayerTab:Toggle({
         local Players = game:GetService("Players")
         local LocalPlayer = Players.LocalPlayer
 
-        -- Helper to apply Highlight to a character
         local function applyHighlight(player)
-            if player == LocalPlayer then return end -- Skip self
+            if player == LocalPlayer then return end
 
             local function addHighlightToChar(character)
                 if not character then return end
-                
-                -- Avoid duplicate highlights
                 if character:FindFirstChild("PlayerESP_Highlight") then return end
 
                 local highlight = Instance.new("Highlight")
                 highlight.Name = "PlayerESP_Highlight"
-                highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Fill Color (Red)
-                highlight.FillTransparency = 0.5               -- Fill Opacity
-                highlight.OutlineColor = Color3.fromRGB(255, 255, 255) -- Outline Color (White)
-                highlight.OutlineTransparency = 0              -- Outline Opacity
-                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- Visible through walls
+                highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                highlight.FillTransparency = 0.5
+                highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                highlight.OutlineTransparency = 0
+                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                 highlight.Parent = character
 
                 activeHighlights[character] = highlight
             end
 
-            -- Apply to current character
             if player.Character then
                 addHighlightToChar(player.Character)
             end
 
-            -- Automatically apply when player respawns
             local conn = player.CharacterAdded:Connect(addHighlightToChar)
             table.insert(playerConnections, conn)
         end
 
         if state then
-            -- Enable ESP for current players
             for _, player in ipairs(Players:GetPlayers()) do
                 applyHighlight(player)
             end
 
-            -- Enable ESP for players who join later
             local joinConn = Players.PlayerAdded:Connect(applyHighlight)
             table.insert(playerConnections, joinConn)
-
         else
-            -- Disable ESP: Clean up all highlight instances
             for character, highlight in pairs(activeHighlights) do
                 if highlight and highlight.Parent then
                     highlight:Destroy()
@@ -346,7 +314,6 @@ Tabs.PlayerTab:Toggle({
             end
             table.clear(activeHighlights)
 
-            -- Disconnect all active player & character connections
             for _, conn in ipairs(playerConnections) do
                 if conn then
                     conn:Disconnect()
@@ -357,7 +324,6 @@ Tabs.PlayerTab:Toggle({
     end,
 })
 
-
 local isEnabled = false
 
 Tabs.PlayerTab:Toggle({
@@ -366,25 +332,20 @@ Tabs.PlayerTab:Toggle({
     Value = false,
     Callback = function(state)
         isEnabled = state
-        
-        -- Function para baguhin ang hold duration ng mga prompt
+
         local function updatePrompts()
             for _, descendant in ipairs(workspace:GetDescendants()) do
                 if descendant:IsA("ProximityPrompt") then
                     if isEnabled then
-                        -- Ginagawa itong 0 para ma-tap agad nang walang hintayan
                         descendant.HoldDuration = 0
                     else
-                        -- Pwede mong ibalik sa default (halimbawa ay 0.5 o kung ano man ang orig)
-                        -- O kaya ay hayaan na lang kung may sarili silang duration
                     end
                 end
             end
         end
 
         updatePrompts()
-        
-        -- Opsyonal: Para ma-detect din ang mga bagong mag-a-appear na prompt sa laro
+
         if isEnabled then
             workspace.DescendantAdded:Connect(function(descendant)
                 if isEnabled and descendant:IsA("ProximityPrompt") then
@@ -408,8 +369,8 @@ local SPOT_1_SAFE   = CFrame.new(500.6, 70.3, -366.7)
 local SPOT_2        = CFrame.new(546.8, 70.3, -364.4)
 
 -- Speeds
-local INSTANT_SPEED = 9999   
-local SLIDE_SPEED   = 600    
+local INSTANT_SPEED = 9999
+local SLIDE_SPEED   = 600
 
 local currentSavedCFrame = nil
 local isEnabled = false
@@ -421,7 +382,6 @@ local function updateCamera(character)
 	end
 end
 
--- Improved move function
 local function moveTo(targetCFrame, speed)
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -504,8 +464,6 @@ task.spawn(function()
 	end
 end)
 
-
-
 -- ==================== UI LIBRARY TOGGLE ====================
 Tabs.PlayerTab:Toggle({
 	Title = "Anti Chase",
@@ -516,7 +474,231 @@ Tabs.PlayerTab:Toggle({
 	end,
 })
 
+-- ══════════════════════════════════════════════════════════════════
+--  FRIENDLY DROP  —  hop + drop logic
+-- ══════════════════════════════════════════════════════════════════
+local FriendlyDrop = {}
+do
+	local FD_RS  = game:GetService("ReplicatedStorage")
+	local FD_Run = game:GetService("RunService")
+	local FD_LP  = game:GetService("Players").LocalPlayer
+	local FD_PG  = FD_LP:WaitForChild("PlayerGui")
 
+	local CFG = {
+		DropRemotePath = {"Packages", "Networking", "RF/EggWorld/AskFieldEggDrop"},
+		CheckInterval  = 0.5,
+		Cooldown       = 3,
+		SettleDelay    = 0.15,
+		ForestX        = 599.91,
+		ForestY        = 72.17,
+		ForestZ        = nil,
+		ForestRadius   = 8,
+		HopDelay       = 0,
+		Debug          = true,
+		HopWaypoints = {
+			{3097.27, 72.31}, {2997.74, 72.31}, {2899.69, 72.31}, {2787.67, 72.31},
+			{2738.44, 72.32}, {2704.82, 72.32}, {2600.35, 72.33}, {2438.60, 72.34},
+			{2359.84, 72.35}, {2285.73, 72.35}, {2178.38, 72.36}, {1991.96, 72.36},
+			{1933.81, 72.37}, {1821.70, 72.37}, {1731.50, 72.38}, {1657.21, 72.38},
+			{1601.06, 72.41}, {1476.80, 72.49}, {1350.37, 72.57}, {1281.97, 72.57},
+			{1111.38, 72.49}, {980.40, 72.42}, {956.22, 72.42}, {883.68, 72.42},
+			{758.07, 72.43}, {613.34, 72.44}, {609.38, 72.41}, {602.18, 72.33},
+			{599.91, 72.23}, {599.91, 72.17},
+		},
+	}
+
+	local function waitForPath(root, ...)
+		local node = root
+		for _, seg in ipairs({...}) do
+			local ok, child = pcall(function() return node:WaitForChild(seg, 10) end)
+			if not ok or not child then return nil end
+			node = child
+		end
+		return node
+	end
+
+	local function getHRP()
+		local char = FD_LP.Character
+		if not char then return nil, nil end
+		return char:FindFirstChild("HumanoidRootPart"), char:FindFirstChildOfClass("Humanoid")
+	end
+
+	local function disableCharCollide(char)
+		local saved = {}
+		if not char then return saved end
+		for _, d in ipairs(char:GetDescendants()) do
+			if d:IsA("BasePart") then
+				saved[d] = d.CanCollide
+				d.CanCollide = false
+			end
+		end
+		return saved
+	end
+
+	local function restoreCharCollide(saved)
+		for p, s in pairs(saved) do
+			if p and p.Parent then p.CanCollide = s end
+		end
+	end
+
+	local dropRemote
+	local function getDropRemote()
+		if dropRemote and dropRemote.Parent then return dropRemote end
+		dropRemote = waitForPath(FD_RS, unpack(CFG.DropRemotePath))
+		return dropRemote
+	end
+
+	local function fireDrop()
+		local r = getDropRemote()
+		if not r then
+			warn("[FriendlyDrop] Drop remote not found: " .. table.concat(CFG.DropRemotePath, "."))
+			return false
+		end
+		local ok, err = pcall(function() r:InvokeServer({ Reason = "PlayerRequest" }) end)
+		if not ok then warn("[FriendlyDrop] Drop failed: " .. tostring(err)); return false end
+		if CFG.Debug then print("[FriendlyDrop] ✓ drop remote fired") end
+		return true
+	end
+
+	local function isAtForest()
+		local hrp = getHRP()
+		if not hrp then return false end
+		local z = CFG.ForestZ or hrp.Position.Z
+		local target = Vector3.new(CFG.ForestX, CFG.ForestY, z)
+		return (hrp.Position - target).Magnitude <= CFG.ForestRadius
+	end
+
+	local fdEnabled = false
+	local isHopping = false
+
+	local function multiHopToForest()
+		if not fdEnabled or isHopping then return false end
+		local hrp, hum = getHRP()
+		if not hrp then return false end
+		local char = hrp.Parent
+		pcall(function() hrp:SetNetworkOwner(FD_LP) end)
+		isHopping = true
+		local z = CFG.ForestZ or hrp.Position.Z
+
+		if CFG.Debug then
+			print(string.format("[FriendlyDrop] HOP START: (%.1f, %.1f, %.1f) waypoints=%d",
+				hrp.Position.X, hrp.Position.Y, hrp.Position.Z, #CFG.HopWaypoints))
+		end
+
+		local oW, oJ, oP, oAR
+		if hum then
+			oW, oJ = hum.WalkSpeed, hum.JumpPower
+			oP, oAR = hum.PlatformStand, hum.AutoRotate
+			hum.WalkSpeed = 0; hum.JumpPower = 0
+			hum.PlatformStand = true; hum.AutoRotate = false
+			pcall(function() hum:ChangeState(Enum.HumanoidStateType.Physics) end)
+		end
+		local savedC = disableCharCollide(char)
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+
+		local reached = 0
+		for i, wp in ipairs(CFG.HopWaypoints) do
+			if not hrp.Parent or not fdEnabled then break end
+			local t = Vector3.new(wp[1], wp[2], z)
+			hrp.CFrame = CFrame.new(t)
+			if (hrp.Position - t).Magnitude > 1 then hrp.Position = t end
+			reached = i
+			if CFG.Debug and (i <= 5 or i % 5 == 0 or i == #CFG.HopWaypoints) then
+				print(string.format("[FriendlyDrop]   hop %d/%d → (%.2f, %.2f)",
+					i, #CFG.HopWaypoints, hrp.Position.X, hrp.Position.Y))
+			end
+			if CFG.HopDelay > 0 then task.wait(CFG.HopDelay) else FD_Run.Heartbeat:Wait() end
+		end
+
+		if hrp.Parent then
+			local f = Vector3.new(CFG.ForestX, CFG.ForestY, z)
+			hrp.CFrame = CFrame.new(f)
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+		end
+		restoreCharCollide(savedC)
+		if hum then
+			hum.WalkSpeed = oW or 16; hum.JumpPower = oJ or 50
+			hum.PlatformStand = oP or false; hum.AutoRotate = oAR ~= false
+			pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+		end
+		isHopping = false
+		local ok = reached == #CFG.HopWaypoints and isAtForest()
+		if CFG.Debug then print("[FriendlyDrop] HOP DONE atForest=" .. tostring(ok)) end
+		return ok
+	end
+
+	local DROPGUI_NAMES = {
+		["DropHeldEgg"]=true, ["DropHeldEggGui"]=true, ["DropHeldEggGUI"]=true,
+		["HeldEgg"]=true, ["HeldEggGui"]=true,
+		["DropEgg"]=true, ["DropEggGui"]=true,
+		["EggDrop"]=true, ["EggDropGui"]=true, ["DropButton"]=true,
+	}
+	local function isDropGUIActive()
+		for _, g in ipairs(FD_PG:GetDescendants()) do
+			if g:IsA("ScreenGui") or g:IsA("GuiObject") then
+				if DROPGUI_NAMES[g.Name] then
+					local on = false
+					if g:IsA("ScreenGui") then on = g.Enabled else on = g.Visible end
+					if on then return true end
+				end
+			end
+		end
+		return false
+	end
+
+	task.spawn(function()
+		task.wait(2)
+		local wasOn, lastDropTime = false, 0
+		local prevEnabled = false
+		while true do
+			task.wait(CFG.CheckInterval)
+
+			-- ⭐ when toggle flips ON, reset wasOn so next ON counts as rising edge
+			if fdEnabled and not prevEnabled then
+				wasOn = false
+			end
+			prevEnabled = fdEnabled
+
+			if not fdEnabled or isHopping then
+				wasOn = isDropGUIActive()
+				continue
+			end
+
+			local nowOn = isDropGUIActive()
+			local rising = nowOn and not wasOn
+			wasOn = nowOn
+			if not rising then continue end
+			if tick() - lastDropTime < CFG.Cooldown then continue end
+
+			print("[FriendlyDrop] DropHeldEgg ENABLED → hop")
+			local ok = multiHopToForest()
+			if ok and isAtForest() and fdEnabled then
+				task.wait(CFG.SettleDelay)
+				if isAtForest() then
+					if fireDrop() then lastDropTime = tick() end
+				end
+			end
+			task.wait(1.5)
+		end
+	end)
+
+	FriendlyDrop.SetEnabled = function(v) fdEnabled = not not v end
+	FriendlyDrop.IsEnabled  = function() return fdEnabled end
+	FriendlyDrop.Config     = CFG
+end
+
+Tabs.PlayerTab:Toggle({
+	Title = "Friendly Drop",
+	Desc = "Multi-hop to forest & drop held egg when DropHeldEgg opens",
+	Value = false,
+	Callback = function(state)
+		FriendlyDrop.SetEnabled(state)
+		FriendlyDrop.Config.Debug = state
+		print("[FriendlyDrop] enabled = " .. tostring(state))
+	end,
+})
 
 local Tabs = {
     MiscTab = Window:Tab({
@@ -524,7 +706,6 @@ local Tabs = {
         Icon = "121572094465765",
     }),
 }
-
 
 --[[
     Humanoid Swap Anti-Death Bypass
@@ -560,7 +741,6 @@ local Camera            = Workspace.CurrentCamera
 -- ============================================================
 local isEnabled = false
 
--- Lahat ng 16 na HumanoidStateType
 local ALL_STATES = {
     Enum.HumanoidStateType.FallingDown,
     Enum.HumanoidStateType.Ragdoll,
@@ -580,7 +760,6 @@ local ALL_STATES = {
     Enum.HumanoidStateType.None,
 }
 
--- Connections na kailangan i-disconnect kapag disable
 local ActiveConnections = {}
 
 local function track(conn)
@@ -597,9 +776,6 @@ local function clearConnections()
     ActiveConnections = {}
 end
 
--- ============================================================
--- HELPERS
--- ============================================================
 local function safe(fn, ...)
     local ok, err = pcall(fn, ...)
     if not ok then
@@ -608,9 +784,6 @@ local function safe(fn, ...)
     return ok
 end
 
--- ============================================================
--- SAVE / RESTORE HUMANOID PROPERTIES
--- ============================================================
 local function SaveHumanoidProps(hum)
     local saved = {}
     pcall(function() saved.JumpPower          = hum.JumpPower          end)
@@ -639,9 +812,6 @@ local function RestoreHumanoidProps(hum, saved)
     end
 end
 
--- ============================================================
--- LOCK HEALTH
--- ============================================================
 local function LockHealth(hum)
     safe(function()
         hum.MaxHealth = math.huge
@@ -649,18 +819,12 @@ local function LockHealth(hum)
     end)
 end
 
--- ============================================================
--- BLOCK DEATH STATE
--- ============================================================
 local function BlockDeathState(hum)
     safe(function() hum.BreakJointsOnDeath = false end)
     safe(function() hum.RequiresNeck       = false end)
     safe(function() hum.Dead               = false end)
 end
 
--- ============================================================
--- BIND ANTI-DEATH EVENTS
--- ============================================================
 local function BindAntiDeath(hum)
     track(hum.HealthChanged:Connect(function(h)
         if not isEnabled then return end
@@ -680,12 +844,8 @@ local function BindAntiDeath(hum)
     end))
 end
 
--- ============================================================
--- BACKGROUND LOOP
--- ============================================================
 local function StartBackgroundLoop(hum)
     track(RunService.Heartbeat:Connect(function()
-        -- throttle sa 0.1s
         local now = tick()
         if not hum.Parent then return end
         if not isEnabled then return end
@@ -705,9 +865,6 @@ local function StartBackgroundLoop(hum)
     end))
 end
 
--- ============================================================
--- REFRESH CONTROLS
--- ============================================================
 local function RefreshControls(player, character)
     safe(function()
         local PlayerModule = require(player:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
@@ -718,13 +875,9 @@ local function RefreshControls(player, character)
     end)
 end
 
--- ============================================================
--- HUMANOD SWAP
--- ============================================================
 local function SwapHumanoid(character)
     if not character then return end
 
-    -- Hintayin ang lumang humanoid
     local oldHum = character:FindFirstChildOfClass("Humanoid")
     if not oldHum then
         local timeout = tick() + 5
@@ -738,10 +891,8 @@ local function SwapHumanoid(character)
         return
     end
 
-    -- 1) I-save ang properties bago i-swap
     local saved = SaveHumanoidProps(oldHum)
 
-    -- 2) I-clone ang old humanoid
     local newHum
     safe(function() newHum = oldHum:Clone() end)
     if not newHum then
@@ -749,41 +900,32 @@ local function SwapHumanoid(character)
         return
     end
 
-    -- 3) I-transfer lahat ng children mula old -> new
     safe(function()
         for _, child in ipairs(oldHum:GetChildren()) do
             pcall(function() child.Parent = newHum end)
         end
     end)
 
-    -- 4) I-destroy ang old
     safe(function() oldHum:Destroy() end)
 
-    -- 5) I-parent ang clone sa Character
     safe(function() newHum.Parent = character end)
 
-    -- 6) I-restore ang saved properties
     RestoreHumanoidProps(newHum, saved)
 
-    -- 7) LockHealth + BlockDeathState + BindAntiDeath
     LockHealth(newHum)
     BlockDeathState(newHum)
     BindAntiDeath(newHum)
 
-    -- 8) Background loop
     StartBackgroundLoop(newHum)
 
-    -- 9) RefreshControls
     RefreshControls(LocalPlayer, character)
 
-    -- 10) Camera subject
     safe(function()
         if Camera then
             Camera.CameraSubject = newHum
         end
     end)
 
-    -- 11) Double-check pattern pagka-0.25s
     task.delay(0.25, function()
         if not isEnabled then return end
         safe(function()
@@ -802,38 +944,29 @@ local function SwapHumanoid(character)
     return newHum
 end
 
--- ============================================================
--- CHARACTER HANDLER
--- ============================================================
 local function OnCharacterAdded(character)
     if not isEnabled then return end
 
-    -- Hintayin ang Humanoid
     task.spawn(function()
         local hum = character:WaitForChild("Humanoid", 10)
         if not hum then return end
-        task.wait(0.1) -- hayaan ang default systems mag-load muna
+        task.wait(0.1)
         if isEnabled then
             SwapHumanoid(character)
         end
     end)
 end
 
--- ============================================================
--- ENABLE / DISABLE
--- ============================================================
 local CharacterAddedConn
 
 local function Enable()
     isEnabled = true
 
-    -- I-bind sa Player.CharacterAdded
     if CharacterAddedConn then
         pcall(function() CharacterAddedConn:Disconnect() end)
     end
     CharacterAddedConn = LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 
-    -- Initial task.spawn (kung may character na)
     task.spawn(function()
         local char = LocalPlayer.Character
         if char and isEnabled then
@@ -857,29 +990,6 @@ local function Disable()
     end
 end
 
--- ============================================================
--- UI LIBRARY (placeholder — palitan ng aktwal na library mo)
--- ============================================================
---[[
-    IMPORTANTE:
-    Palitan ang `Tabs` at ang UI library reference ng aktwal na library mo.
-    Ang code sa ibaba ay gumagamit ng standard na Toggle API na binanggit mo.
-
-    Halimbawa kung may UI library ka na:
-        local Library = loadstring(game:HttpGet("..."))()
-        local Tabs    = Library:CreateWindow(...):AddTab(...)
---]]
-
--- Placeholder para hindi mag-error kung wala pang UI library:
-local Tabs = Tabs or {
-    PlayerTab = {
-        Toggle = function(_, cfg)
-            -- Fallback: kung wala pang UI, i-auto-enable via command bar
-            if cfg.Callback then cfg.Callback(true) end
-        end
-    }
-}
-
 Tabs.MiscTab:Toggle({
     Title = "Anti Death",
     Desc  = "Use only for Admin Egg Abuse and don't use Treadmill once this is Enabled or you'll stuck",
@@ -900,14 +1010,13 @@ local speaker = Players.LocalPlayer
 Tabs.MiscTab:Slider({
     Title = "WalkSpeed",
     Desc = "Adjust your character's walking speed",
---Flag = "WalkSpeedSlider",
- IsTooltip = true,
-    IsTextbox = true, -- Pwede mong gawing false kung ayaw mo ng textbox
+    IsTooltip = true,
+    IsTextbox = true,
     Step = 1,
     Value = {
         Min = 0,
         Max = 1000,
-        Default = 16, -- 16 ang default walkspeed sa Roblox
+        Default = 16,
     },
     Callback = function(value)
         pcall(function()
