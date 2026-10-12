@@ -1,7 +1,7 @@
 -- ============================================================
 --  FLORENCE HUB  |  v3.8  •  Standalone Edition
 --  Mobile-aware • Draggable toggle • M key toggle
---  Anti AFK added to Movement tab
+--  Auto Claim (fixed camera focus) • Anti AFK
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -1161,7 +1161,7 @@ makeLabel(heroSec, "🏃  Movement — walkspeed / jumppower / anti-afk")
 makeLabel(heroSec, "⚙️  Settings — keybind + config save/load")
 
 -- ============================================================
---  TAB 2 — AUTO CLAIM  (live loop + camera focus)
+--  TAB 2 — AUTO CLAIM  (live loop + fixed camera focus)
 -- ============================================================
 local claimPage = makeTab("claim", "🎁", "Auto Claim")
 
@@ -1175,6 +1175,7 @@ local TP_COOLDOWN    = 0.5
 local FIRE_COOLDOWN  = 1
 local IDLE_WAIT      = 0.35
 local CAMERA_FOCUS_TIME = 0.35
+local CAMERA_HOLD_TIME  = 0.25
 
 local claimState = {
 	enabled     = false,
@@ -1223,18 +1224,38 @@ local function getPromptTarget(model)
 		or getModelAnchor(model)
 end
 
+-- ============================================================
+--  FIXED CAMERA FOCUS  —  forces Scriptable so the tween isn't
+--  overridden by Roblox's default camera script.
+-- ============================================================
 local function focusCameraOnModel(model)
 	local target = getPromptTarget(model)
 	if not target then return false end
 
-	local targetPos = target.Position
 	local char = LocalPlayer.Character
 	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return false end
 
-	local camFrom = hrp.Position + Vector3.new(0, 2.5, 0)
-		+ (hrp.Position - targetPos).Unit * 3
+	local targetPos = target.Position
+
+	-- camera sits 4 studs behind the HRP relative to the target, 2 studs up
+	local dirFromTarget = (hrp.Position - targetPos)
+	if dirFromTarget.Magnitude < 0.1 then
+		dirFromTarget = Vector3.new(0, 0, 4)
+	end
+	local camFrom = hrp.Position
+		+ dirFromTarget.Unit * 4
+		+ Vector3.new(0, 2, 0)
 	local camCF = CFrame.new(camFrom, targetPos)
+
+	-- save original camera state
+	local prevType    = Camera.CameraType
+	local prevCFrame  = Camera.CFrame
+	local prevFocus   = Camera.Focus
+	local prevSubject = Camera.CameraSubject
+
+	-- FORCE Scriptable so the default camera script can't override us
+	Camera.CameraType = Enum.CameraType.Scriptable
 
 	claimState.isFocused = true
 	local tw = TweenService:Create(
@@ -1244,6 +1265,19 @@ local function focusCameraOnModel(model)
 	)
 	tw:Play()
 	tw.Completed:Wait()
+
+	-- hold the focus so the player sees it
+	task.wait(CAMERA_HOLD_TIME)
+
+	-- restore camera control
+	Camera.CameraSubject = hrp:FindFirstChildOfClass("Humanoid") or hrp
+	Camera.CameraType = Enum.CameraType.Custom
+	pcall(function()
+		if prevType == Enum.CameraType.Scriptable then
+			Camera.CFrame = prevCFrame
+		end
+	end)
+
 	claimState.isFocused = false
 	return true
 end
@@ -1342,9 +1376,11 @@ local function processItem(model)
 
 	while claimState.isTweening do task.wait(0.05) end
 
+	-- 1) TP to the item
 	tweenToModel(model)
-	task.wait(0.15)
+	task.wait(0.2)
 
+	-- 2) Check distance
 	local char = LocalPlayer.Character
 	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
 	local anchor = getModelAnchor(model)
@@ -1353,9 +1389,10 @@ local function processItem(model)
 	local dist = (anchor.Position - hrp.Position).Magnitude
 	if dist > DETECT_RADIUS then return end
 
+	-- 3) FORCE camera focus on the prompt's parent part
 	focusCameraOnModel(model)
-	task.wait(0.1)
 
+	-- 4) Fire the prompt while the camera is on it
 	local fired = firePromptsIn(model)
 	if fired > 0 then
 		claimState.claimCount += fired
@@ -1450,17 +1487,17 @@ makeParagraph(claimInfoSec,
 	"Live-loops forever while enabled. Every cycle it scans workspace."
 	.. HALLOWEEN_NAME .. "." .. SPAWN_NAME .. ", removes entries that no longer "
 	.. "exist, picks the NEAREST unhandled item containing \"" .. ITEM_KEYWORD
-	.. "\", tweens within " .. DETECT_RADIUS .. " studs, LOCKS THE CAMERA onto "
-	.. "the item's ProximityPrompt for " .. CAMERA_FOCUS_TIME
-	.. "s, then fires it. Repeats until no items remain, then keeps scanning for "
-	.. "respawns.")
+	.. "\", tweens within " .. DETECT_RADIUS .. " studs, FORCES the camera to "
+	.. "look at the item's ProximityPrompt (camera is switched to Scriptable so "
+	.. "it can't be overridden), then fires the prompt and returns control to "
+	.. "you.")
 
 task.spawn(function()
 	while gui.Parent do
 		if claimState.enabled then
 			local suffix = ""
 			if claimState.isTweening then suffix = "  •  tweening…"
-			elseif claimState.isFocused then suffix = "  •  focusing camera…"
+			elseif claimState.isFocused then suffix = "  •  camera focused…"
 			end
 			if claimState.itemsSeen > 0 then
 				claimStatusLbl.Text = "● Running…" .. suffix
@@ -2158,15 +2195,8 @@ local function setJumpPower(v)
 	config.jumpPower = v
 end
 
--- ============================================================
---  Anti AFK  (same technique as Infinite Yield)
---  Hooks LocalPlayer.Idled and simulates input via VirtualUser
---  so Roblox doesn't kick you for being idle.
--- ============================================================
-local antiAfkState = {
-	connection = nil,
-	enabled    = false,
-}
+-- Anti AFK (same as Infinite Yield)
+local antiAfkState = { connection = nil, enabled = false }
 
 local function enableAntiAfk()
 	if antiAfkState.connection then return end
@@ -2216,18 +2246,14 @@ makeToggle(afkSec, "Anti AFK",
 		setAntiAfk(v)
 	end)
 
--- apply Anti AFK on load if it was enabled in config
 if config.antiAfk then
-	task.defer(function()
-		enableAntiAfk()
-	end)
+	task.defer(function() enableAntiAfk() end)
 end
 
 LocalPlayer.CharacterAdded:Connect(function()
 	task.wait(1)
 	setWalkSpeed(config.walkSpeed or 16)
 	setJumpPower(config.jumpPower or 50)
-	-- re-attach anti afk connection in case it was dropped on respawn
 	if config.antiAfk and not antiAfkState.connection then
 		enableAntiAfk()
 	end
