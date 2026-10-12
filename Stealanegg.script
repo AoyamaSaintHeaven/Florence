@@ -655,7 +655,6 @@ do
 		while true do
 			task.wait(CFG.CheckInterval)
 
-			-- ⭐ when toggle flips ON, reset wasOn so next ON counts as rising edge
 			if fdEnabled and not prevEnabled then
 				wasOn = false
 			end
@@ -700,12 +699,184 @@ Tabs.PlayerTab:Toggle({
 	end,
 })
 
+-- ══════════════════════════════════════════════════════════════════
+--  FLY  —  Infinite Yield-style flight
+--  • WASD to move · Space up · Shift down · F to toggle
+--  • Speed adjustable 1–100
+-- ══════════════════════════════════════════════════════════════════
+local Fly = {}
+do
+	local UserInputService = game:GetService("UserInputService")
+	local RunService       = game:GetService("RunService")
+	local LP = game:GetService("Players").LocalPlayer
+
+	local enabled    = false
+	local speedValue = 20
+	local SPEED_UNIT = 5           -- max (100) = 500 studs/s
+
+	local bodyGyro, bodyVel, heartConn, humBackup
+	local toggleUI                 -- set via Fly.AttachToggle
+	local uiUpdating = false       -- prevent toggle loop
+
+	local function getHRP()
+		local char = LP.Character
+		if not char then return nil, nil end
+		return char:FindFirstChild("HumanoidRootPart"), char:FindFirstChildOfClass("Humanoid")
+	end
+
+	local function stop()
+		if bodyGyro then bodyGyro:Destroy(); bodyGyro = nil end
+		if bodyVel  then bodyVel:Destroy();  bodyVel  = nil end
+		if heartConn then heartConn:Disconnect(); heartConn = nil end
+
+		local _, hum = getHRP()
+		if hum and humBackup then
+			pcall(function()
+				hum.PlatformStand = humBackup.platform
+				hum.WalkSpeed     = humBackup.walk
+				hum.JumpPower     = humBackup.jump
+				hum.AutoRotate    = humBackup.rotate
+			end)
+		end
+		humBackup = nil
+	end
+
+	local function start()
+		stop()
+
+		local hrp, hum = getHRP()
+		if not hrp then return end
+
+		if hum then
+			humBackup = {
+				platform = hum.PlatformStand,
+				walk     = hum.WalkSpeed,
+				jump     = hum.JumpPower,
+				rotate   = hum.AutoRotate,
+			}
+			hum.PlatformStand = true
+			hum.WalkSpeed     = 0
+			hum.JumpPower     = 0
+			hum.AutoRotate    = false
+		end
+
+		bodyGyro = Instance.new("BodyGyro")
+		bodyGyro.P = 9e4
+		bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+		bodyGyro.CFrame = hrp.CFrame
+		bodyGyro.Parent = hrp
+
+		bodyVel = Instance.new("BodyVelocity")
+		bodyVel.velocity = Vector3.new(0, 0.1, 0)
+		bodyVel.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+		bodyVel.P = 12505
+		bodyVel.Parent = hrp
+
+		heartConn = RunService.Heartbeat:Connect(function()
+			if not enabled then return end
+			if not hrp or not hrp.Parent then return end
+
+			local cam = workspace.CurrentCamera
+			local move = Vector3.zero
+
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+				move = move + cam.CFrame.LookVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+				move = move - cam.CFrame.LookVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+				move = move - cam.CFrame.RightVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+				move = move + cam.CFrame.RightVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+				move = move + Vector3.new(0, 1, 0)
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+			or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
+				move = move - Vector3.new(0, 1, 0)
+			end
+
+			if move.Magnitude > 0 then move = move.Unit end
+
+			bodyGyro.CFrame = cam.CFrame
+			bodyVel.velocity = move * (speedValue * SPEED_UNIT)
+		end)
+	end
+
+	Fly.SetEnabled = function(v)
+		v = not not v
+		if v == enabled then return end
+		enabled = v
+		if enabled then start() else stop() end
+
+		-- sync the WindUI toggle if flipped from keybind
+		if toggleUI and not uiUpdating then
+			uiUpdating = true
+			pcall(function()
+				if toggleUI.Set then toggleUI:Set(enabled)
+				elseif toggleUI.SetValue then toggleUI:SetValue(enabled) end
+			end)
+			uiUpdating = false
+		end
+
+		print("[Fly] enabled = " .. tostring(enabled))
+	end
+
+	Fly.SetSpeed = function(v)
+		speedValue = math.clamp(tonumber(v) or 20, 1, 100)
+	end
+
+	Fly.IsEnabled = function() return enabled end
+	Fly.GetSpeed  = function() return speedValue end
+	Fly.AttachToggle = function(tog) toggleUI = tog end
+
+	-- ⭐ F keybind — toggles Fly on/off
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+		if input.KeyCode == Enum.KeyCode.F then
+			Fly.SetEnabled(not enabled)
+		end
+	end)
+end
+
 local Tabs = {
     MiscTab = Window:Tab({
         Title = "Misc",
         Icon = "121572094465765",
     }),
 }
+
+-- ⭐ Fly toggle (Misc tab)
+local flyToggle = Tabs.MiscTab:Toggle({
+    Title = "Fly",
+    Desc = "WASD · Space up · Shift down · Press F to toggle",
+    Value = false,
+    Callback = function(state)
+        Fly.SetEnabled(state)
+    end,
+})
+
+Fly.AttachToggle(flyToggle)
+
+-- ⭐ Fly speed slider (1–100)
+Tabs.MiscTab:Slider({
+    Title = "Fly Speed",
+    Desc = "1 = slow  ·  100 = fast",
+    IsTooltip = true,
+    IsTextbox = true,
+    Step = 1,
+    Value = {
+        Min = 1,
+        Max = 100,
+        Default = 20,
+    },
+    Callback = function(value)
+        Fly.SetSpeed(value)
+    end,
+})
 
 --[[
     Humanoid Swap Anti-Death Bypass
