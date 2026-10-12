@@ -1,6 +1,7 @@
 -- ============================================================
---  FLORENCE HUB  |  v2.3  •  Standalone Edition
---  Mobile-aware • Draggable toggle • RightCtrl closes (PC)
+--  FLORENCE HUB  |  v3.8  •  Standalone Edition
+--  Mobile-aware • Draggable toggle • M key toggle
+--  Anti AFK added to Movement tab
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -10,6 +11,7 @@ local RunService       = game:GetService("RunService")
 local HttpService      = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
+local Camera      = workspace.CurrentCamera
 
 -- ============================================================
 --  PLATFORM DETECTION
@@ -118,16 +120,19 @@ local CONFIG_FOLDER = "FlorenceHub"
 local CONFIG_FILE   = CONFIG_FOLDER .. "/config.json"
 
 local config = {
-	accent       = "default",
-	windowOpen   = true,
-	scannerTerm  = "candy",
-	scanCase     = false,
-	scanExact    = false,
+	accent        = "default",
+	windowOpen    = true,
+	scannerTerm   = "candy",
+	scanCase      = false,
+	scanExact     = false,
 	instantPrompt = false,
-	walkSpeed    = 16,
-	jumpPower    = 50,
-	toggleX      = 20,
-	toggleY      = 0.5,
+	patrolESP     = false,
+	autoClaim     = false,
+	antiAfk       = false,
+	walkSpeed     = 16,
+	jumpPower     = 50,
+	toggleX       = 20,
+	toggleY       = 0.5,
 }
 
 local function supportsFS()
@@ -268,7 +273,7 @@ corner(14, win)
 stroke(P.Border, 1, win)
 
 -- ============================================================
---  FLOATING TOGGLE  (tap = toggle, drag = move)
+--  FLOATING TOGGLE
 -- ============================================================
 local TOGGLE_SIZE = IS_MOBILE and 46 or 50
 
@@ -575,7 +580,7 @@ local statusRight = new("TextLabel", {
 	Size = UDim2.new(0.5, -10, 1, 0),
 	Position = UDim2.new(0.5, 0, 0, 0),
 	BackgroundTransparency = 1,
-	Text = "v2.3  •  " .. (IS_MOBILE and "mobile" or "desktop"),
+	Text = "v3.8  •  " .. (IS_MOBILE and "mobile" or "desktop"),
 	TextColor3 = P.Muted,
 	Font = Enum.Font.Gotham,
 	TextSize = fs(10),
@@ -1098,12 +1103,11 @@ local function makeKeybind(parent, title, default, callback)
 				currentKey = input.KeyCode
 				btn.Text = currentKey.Name
 				btn.TextColor3 = P.Text
-				if callback then callback(currentKey) end
 			end
-		else
-			if currentKey and input.KeyCode == currentKey and callback then
-				callback(currentKey, true)
-			end
+			return
+		end
+		if currentKey and input.KeyCode == currentKey and callback then
+			callback(currentKey, true)
 		end
 	end)
 
@@ -1146,15 +1150,338 @@ local homePage = makeTab("home", "🏠", "Home")
 
 local heroSec = makeSection(homePage, "Welcome")
 makeParagraph(heroSec,
-	"Florence Hub v2.3 — standalone with mobile-aware sizing. "
-	.. "Drag the 🍬 button anywhere. Tap it to open/close the window.")
+	"Florence Hub v3.8 — standalone with mobile-aware sizing. "
+	.. "Drag the 🍬 button anywhere. Tap it to open/close the window. "
+	.. "Press M to toggle.")
+makeLabel(heroSec, "🎁  Auto Claim — live-loop TP + camera focus + fire prompt")
 makeLabel(heroSec, "🍬  Scanner — search Workspace by name")
 makeLabel(heroSec, "⚡  Instant Prompt — one-tap ProximityPrompts")
-makeLabel(heroSec, "🏃  Movement — walkspeed / jumppower sliders")
+makeLabel(heroSec, "👁  Patrol ESP — live scan workspace.Patrol and ESP models")
+makeLabel(heroSec, "🏃  Movement — walkspeed / jumppower / anti-afk")
 makeLabel(heroSec, "⚙️  Settings — keybind + config save/load")
 
 -- ============================================================
---  TAB 2 — SCANNER
+--  TAB 2 — AUTO CLAIM  (live loop + camera focus)
+-- ============================================================
+local claimPage = makeTab("claim", "🎁", "Auto Claim")
+
+local HALLOWEEN_NAME = "Halloween"
+local SPAWN_NAME     = "SpawnPoint"
+local ITEM_KEYWORD   = "item"
+local TWEEN_TIME     = 0.4
+local STAND_OFFSET   = 1
+local DETECT_RADIUS  = 5
+local TP_COOLDOWN    = 0.5
+local FIRE_COOLDOWN  = 1
+local IDLE_WAIT      = 0.35
+local CAMERA_FOCUS_TIME = 0.35
+
+local claimState = {
+	enabled     = false,
+	loopRunning = false,
+	processed   = {},
+	fired       = {},
+	isTweening  = false,
+	isFocused   = false,
+	claimCount  = 0,
+	itemsSeen   = 0,
+}
+
+local function getSpawnPath()
+	local halloween = workspace:FindFirstChild(HALLOWEEN_NAME)
+	if not halloween then return nil end
+	return halloween:FindFirstChild(SPAWN_NAME)
+end
+
+local function isItemInstance(inst)
+	if not (inst:IsA("Model") or inst:IsA("BasePart")) then return false end
+	return inst.Name:lower():find(ITEM_KEYWORD, 1, true) ~= nil
+end
+
+local function getModelAnchor(model)
+	if model:IsA("BasePart") then return model end
+	if model.PrimaryPart then return model.PrimaryPart end
+	return model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function getPromptTarget(model)
+	local firstPrompt, fallbackPrompt
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("ProximityPrompt") then
+			local parentPart = d.Parent
+			if parentPart and parentPart:IsA("BasePart") then
+				firstPrompt = parentPart
+				break
+			end
+			if not fallbackPrompt then
+				fallbackPrompt = d.Parent
+			end
+		end
+	end
+	return firstPrompt
+		or fallbackPrompt
+		or getModelAnchor(model)
+end
+
+local function focusCameraOnModel(model)
+	local target = getPromptTarget(model)
+	if not target then return false end
+
+	local targetPos = target.Position
+	local char = LocalPlayer.Character
+	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+
+	local camFrom = hrp.Position + Vector3.new(0, 2.5, 0)
+		+ (hrp.Position - targetPos).Unit * 3
+	local camCF = CFrame.new(camFrom, targetPos)
+
+	claimState.isFocused = true
+	local tw = TweenService:Create(
+		Camera,
+		TweenInfo.new(CAMERA_FOCUS_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ CFrame = camCF, Focus = targetPos }
+	)
+	tw:Play()
+	tw.Completed:Wait()
+	claimState.isFocused = false
+	return true
+end
+
+local function firePromptsIn(model)
+	local now = tick()
+	local count = 0
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("ProximityPrompt") then
+			local last = claimState.fired[d]
+			if not last or (now - last) > FIRE_COOLDOWN then
+				claimState.fired[d] = now
+				pcall(function()
+					d.Enabled      = true
+					d.HoldDuration = 0
+					d:InputHoldBegin()
+					d:InputHoldEnd()
+				end)
+				count += 1
+			end
+		end
+	end
+	return count
+end
+
+local function tweenToModel(model)
+	local anchor = getModelAnchor(model)
+	if not anchor then return false end
+
+	local char = LocalPlayer.Character
+	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+
+	local targetPos = anchor.Position
+	local fromPos   = targetPos + Vector3.new(0, 0, STAND_OFFSET)
+	local targetCF  = CFrame.new(fromPos, targetPos)
+
+	claimState.isTweening = true
+	local tw = TweenService:Create(
+		hrp,
+		TweenInfo.new(TWEEN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ CFrame = targetCF }
+	)
+	tw:Play()
+	tw.Completed:Wait()
+	claimState.isTweening = false
+	return true
+end
+
+local function pruneProcessed(spawnPath)
+	for inst in pairs(claimState.processed) do
+		if not inst.Parent then
+			claimState.processed[inst] = nil
+		elseif spawnPath and not inst:IsDescendantOf(spawnPath) then
+			claimState.processed[inst] = nil
+		end
+	end
+	for prompt in pairs(claimState.fired) do
+		if not prompt.Parent then
+			claimState.fired[prompt] = nil
+		end
+	end
+end
+
+local function collectItems(sortByDistance)
+	local list = {}
+	local spawnPath = getSpawnPath()
+	if not spawnPath then return list end
+
+	for _, inst in ipairs(spawnPath:GetDescendants()) do
+		if isItemInstance(inst) and not claimState.processed[inst] then
+			table.insert(list, inst)
+		end
+	end
+
+	if sortByDistance then
+		local char = LocalPlayer.Character
+		local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			table.sort(list, function(a, b)
+				local aA = getModelAnchor(a)
+				local bA = getModelAnchor(b)
+				if not aA or not bA then return aA ~= nil end
+				return (aA.Position - hrp.Position).Magnitude
+				     < (bA.Position - hrp.Position).Magnitude
+			end)
+		end
+	end
+
+	return list
+end
+
+local function processItem(model)
+	if claimState.processed[model] then return end
+	claimState.processed[model] = true
+
+	while claimState.isTweening do task.wait(0.05) end
+
+	tweenToModel(model)
+	task.wait(0.15)
+
+	local char = LocalPlayer.Character
+	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+	local anchor = getModelAnchor(model)
+	if not (hrp and anchor) then return end
+
+	local dist = (anchor.Position - hrp.Position).Magnitude
+	if dist > DETECT_RADIUS then return end
+
+	focusCameraOnModel(model)
+	task.wait(0.1)
+
+	local fired = firePromptsIn(model)
+	if fired > 0 then
+		claimState.claimCount += fired
+		notify("Auto Claim",
+			string.format("Claimed %s  (%d prompt%s, %.1f studs)",
+				model.Name, fired, fired == 1 and "" or "s", dist),
+			"success", 2)
+	end
+end
+
+local function countProcessed()
+	local n = 0
+	for _ in pairs(claimState.processed) do n += 1 end
+	return n
+end
+
+local function startClaimLoop()
+	if claimState.loopRunning then return end
+	claimState.loopRunning = true
+
+	task.spawn(function()
+		while claimState.enabled do
+			local spawnPath = getSpawnPath()
+
+			if not spawnPath then
+				claimState.itemsSeen = 0
+				task.wait(0.5)
+			else
+				pruneProcessed(spawnPath)
+
+				local items = collectItems(true)
+				claimState.itemsSeen = #items
+
+				if #items == 0 then
+					task.wait(IDLE_WAIT)
+				else
+					processItem(items[1])
+					task.wait(TP_COOLDOWN)
+				end
+			end
+		end
+		claimState.loopRunning = false
+	end)
+end
+
+local function setClaimEnabled(state)
+	claimState.enabled = state
+
+	if state then
+		if not getSpawnPath() then
+			notify("Auto Claim",
+				"workspace." .. HALLOWEEN_NAME .. "." .. SPAWN_NAME
+				.. " not found yet — will keep trying.",
+				"warn", 3)
+		end
+		claimState.claimCount = 0
+		startClaimLoop()
+		setStatus("Auto Claim on")
+	else
+		setStatus("Auto Claim off")
+	end
+end
+
+local claimMainSec = makeSection(claimPage, "Auto Claim")
+
+makeToggle(claimMainSec, "Enable Auto Claim",
+	"TP to each \"" .. ITEM_KEYWORD .. "\", focus camera, then fire its prompt",
+	config.autoClaim or false, function(v)
+		setClaimEnabled(v)
+		config.autoClaim = v
+		notify("Auto Claim", v and "Enabled." or "Disabled.",
+			v and "success" or "info", 2)
+	end)
+
+local claimStatusSec = makeSection(claimPage, "Status")
+local claimStatusLbl = makeLabel(claimStatusSec, "Idle.", P.Sub)
+local claimCountLbl  = makeLabel(claimStatusSec, "Handled: 0  •  Claimed: 0", P.Muted)
+local claimQueueLbl  = makeLabel(claimStatusSec, "In queue: 0", P.Muted)
+
+local claimActionSec = makeSection(claimPage, "Actions")
+
+makeButton(claimActionSec, "Reset Processed",
+	"Forget which items were already claimed", "ghost", function()
+		claimState.processed = {}
+		claimState.fired = {}
+		claimStatusLbl.Text = "Processed list cleared."
+		claimStatusLbl.TextColor3 = P.Sub
+	end)
+
+local claimInfoSec = makeSection(claimPage, "Info")
+makeParagraph(claimInfoSec,
+	"Live-loops forever while enabled. Every cycle it scans workspace."
+	.. HALLOWEEN_NAME .. "." .. SPAWN_NAME .. ", removes entries that no longer "
+	.. "exist, picks the NEAREST unhandled item containing \"" .. ITEM_KEYWORD
+	.. "\", tweens within " .. DETECT_RADIUS .. " studs, LOCKS THE CAMERA onto "
+	.. "the item's ProximityPrompt for " .. CAMERA_FOCUS_TIME
+	.. "s, then fires it. Repeats until no items remain, then keeps scanning for "
+	.. "respawns.")
+
+task.spawn(function()
+	while gui.Parent do
+		if claimState.enabled then
+			local suffix = ""
+			if claimState.isTweening then suffix = "  •  tweening…"
+			elseif claimState.isFocused then suffix = "  •  focusing camera…"
+			end
+			if claimState.itemsSeen > 0 then
+				claimStatusLbl.Text = "● Running…" .. suffix
+				claimStatusLbl.TextColor3 = P.Accent
+			else
+				claimStatusLbl.Text = "● Scanning…  waiting for items"
+				claimStatusLbl.TextColor3 = P.Good
+			end
+		else
+			claimStatusLbl.Text = "Idle."
+			claimStatusLbl.TextColor3 = P.Sub
+		end
+		claimCountLbl.Text = "Handled: " .. countProcessed()
+			.. "  •  Claimed: " .. claimState.claimCount
+		claimQueueLbl.Text = "In queue: " .. claimState.itemsSeen
+		task.wait(0.2)
+	end
+end)
+
+-- ============================================================
+--  TAB 3 — SCANNER
 -- ============================================================
 local scannerPage = makeTab("scanner", "🍬", "Scanner")
 
@@ -1486,7 +1813,7 @@ end)
 inputTerm.FocusLost:Connect(function(enter) if enter then doScan() end end)
 
 -- ============================================================
---  TAB 3 — INSTANT PROMPT
+--  TAB 4 — INSTANT PROMPT
 -- ============================================================
 local promptPage = makeTab("prompt", "⚡", "Instant Prompt")
 
@@ -1583,7 +1910,231 @@ makeButton(promptActionSec, "Force Reset",
 	end)
 
 -- ============================================================
---  TAB 4 — MOVEMENT
+--  TAB 5 — PATROL ESP
+-- ============================================================
+local patrolPage = makeTab("patrol", "👁", "Patrol ESP")
+
+local PATROL_PATH    = workspace:FindFirstChild("Patrol")
+local SCAN_INTERVAL  = 0.25
+local ESP_FILL       = Color3.fromRGB(255,  80,  80)
+local ESP_OUTLINE    = Color3.fromRGB(180,  30,  30)
+local ESP_LABEL_Y    = 3
+
+local patrolState = {
+	enabled     = false,
+	loopRunning = false,
+	esp         = {},
+}
+
+local removeESP
+
+local function addESP(model)
+	if not model or not model.Parent then return end
+	if patrolState.esp[model] then return end
+
+	local entry = { conns = {} }
+
+	local hl = Instance.new("Highlight")
+	hl.Name                = "PatrolESP"
+	hl.FillColor           = ESP_FILL
+	hl.OutlineColor        = ESP_OUTLINE
+	hl.FillTransparency    = 0.5
+	hl.OutlineTransparency = 0
+	hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.Adornee             = model
+	hl.Parent              = gui
+	entry.highlight        = hl
+
+	local anchor
+	if model:IsA("BasePart") then
+		anchor = model
+	else
+		anchor = model.PrimaryPart
+			or model:FindFirstChildWhichIsA("BasePart", true)
+	end
+
+	if anchor then
+		local bb = Instance.new("BillboardGui")
+		bb.Name        = "PatrolESPLabel"
+		bb.Size        = UDim2.fromOffset(160, 32)
+		bb.StudsOffset = Vector3.new(0, ESP_LABEL_Y, 0)
+		bb.AlwaysOnTop = true
+		bb.Adornee     = anchor
+		bb.Parent      = gui
+
+		local lbl = Instance.new("TextLabel")
+		lbl.Size                   = UDim2.fromScale(1, 1)
+		lbl.BackgroundTransparency = 1
+		lbl.Text                   = model.Name
+		lbl.TextColor3             = Color3.new(1, 1, 1)
+		lbl.TextStrokeTransparency = 0
+		lbl.TextStrokeColor3       = Color3.new(0, 0, 0)
+		lbl.Font                   = Enum.Font.GothamBold
+		lbl.TextSize               = 14
+		lbl.Parent                 = bb
+
+		entry.billboard = bb
+		entry.label     = lbl
+		entry.anchor    = anchor
+
+		entry.conns[#entry.conns + 1] = RunService.RenderStepped:Connect(function()
+			if not model.Parent or not anchor.Parent then return end
+			local char = LocalPlayer.Character
+			local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local dist = (anchor.Position - hrp.Position).Magnitude
+				lbl.Text = model.Name .. "  [" .. math.floor(dist) .. "m]"
+			end
+		end)
+	end
+
+	entry.conns[#entry.conns + 1] = model.AncestryChanged:Connect(function(_, p)
+		if not p then removeESP(model) end
+	end)
+
+	patrolState.esp[model] = entry
+end
+
+removeESP = function(model)
+	local entry = patrolState.esp[model]
+	if not entry then return end
+	patrolState.esp[model] = nil
+
+	for _, c in ipairs(entry.conns or {}) do
+		pcall(function() c:Disconnect() end)
+	end
+	if entry.highlight then pcall(function() entry.highlight:Destroy() end) end
+	if entry.billboard then pcall(function() entry.billboard:Destroy() end) end
+end
+
+local function refreshESP()
+	if not PATROL_PATH or not PATROL_PATH.Parent then
+		PATROL_PATH = workspace:FindFirstChild("Patrol")
+		if not PATROL_PATH then return end
+	end
+
+	local seen = {}
+	for _, child in ipairs(PATROL_PATH:GetChildren()) do
+		if child:IsA("Model") or child:IsA("BasePart") then
+			seen[child] = true
+			if not patrolState.esp[child] then
+				addESP(child)
+			end
+		end
+	end
+
+	for model in pairs(patrolState.esp) do
+		if not seen[model] or not model.Parent then
+			removeESP(model)
+		end
+	end
+end
+
+local function clearAllESP()
+	for model in pairs(patrolState.esp) do
+		removeESP(model)
+	end
+end
+
+local function startPatrolLoop()
+	if patrolState.loopRunning then return end
+	patrolState.loopRunning = true
+
+	task.spawn(function()
+		while patrolState.enabled do
+			refreshESP()
+			task.wait(SCAN_INTERVAL)
+		end
+		clearAllESP()
+		patrolState.loopRunning = false
+	end)
+end
+
+local function setPatrolEnabled(state)
+	patrolState.enabled = state
+
+	if state then
+		if not PATROL_PATH then
+			PATROL_PATH = workspace:FindFirstChild("Patrol")
+		end
+		if not PATROL_PATH then
+			notify("Patrol ESP", "workspace.Patrol not found.", "error", 3)
+			patrolState.enabled = false
+			return
+		end
+		startPatrolLoop()
+		setStatus("Patrol ESP on")
+	else
+		clearAllESP()
+		setStatus("Patrol ESP off")
+	end
+end
+
+local patrolMainSec = makeSection(patrolPage, "Live Patrol ESP")
+
+makeToggle(patrolMainSec, "Enable Patrol ESP",
+	"Live-scan workspace.Patrol and ESP every model inside",
+	config.patrolESP or false, function(v)
+		setPatrolEnabled(v)
+		config.patrolESP = v
+		notify("Patrol ESP", v and "Enabled." or "Disabled.",
+			v and "success" or "info", 2)
+	end)
+
+local patrolStatusSec = makeSection(patrolPage, "Status")
+local patrolStatusLbl = makeLabel(patrolStatusSec, "Idle.", P.Sub)
+local patrolCountLbl  = makeLabel(patrolStatusSec, "ESP'd: 0", P.Muted)
+
+local patrolActionSec = makeSection(patrolPage, "Actions")
+
+makeButton(patrolActionSec, "Force Refresh",
+	"Immediately rescan workspace.Patrol", "ghost", function()
+		if not patrolState.enabled then
+			notify("Patrol ESP", "Enable the toggle first.", "warn", 2)
+			return
+		end
+		refreshESP()
+		local n = 0
+		for _ in pairs(patrolState.esp) do n += 1 end
+		notify("Patrol ESP", "Rescanned — " .. n .. " ESP'd.", "info", 2)
+	end)
+
+makeButton(patrolActionSec, "Clear All ESP",
+	"Remove every ESP without disabling the toggle", "ghost", function()
+		clearAllESP()
+		notify("Patrol ESP", "ESP cleared.", "info", 2)
+	end)
+
+local patrolInfoSec = makeSection(patrolPage, "Info")
+makeParagraph(patrolInfoSec,
+	"Runs a live scan on workspace.Patrol every " .. SCAN_INTERVAL .. "s. "
+	.. "Any Model or BasePart inside gets a red Highlight + a label with its name "
+	.. "and live distance. When a model leaves Patrol or is destroyed, its ESP "
+	.. "is removed automatically and the scan keeps running.")
+
+task.spawn(function()
+	while gui.Parent do
+		local count = 0
+		for _ in pairs(patrolState.esp) do count += 1 end
+
+		if patrolState.enabled then
+			patrolStatusLbl.Text = "● Scanning…  •  " .. count .. " in Patrol"
+			patrolStatusLbl.TextColor3 = P.Accent
+		else
+			patrolStatusLbl.Text = PATROL_PATH
+				and "Idle."
+				or "workspace.Patrol not found."
+			patrolStatusLbl.TextColor3 = PATROL_PATH and P.Sub or P.Bad
+		end
+
+		patrolCountLbl.Text = "ESP'd: " .. count
+		patrolCountLbl.TextColor3 = count > 0 and P.Good or P.Muted
+		task.wait(0.25)
+	end
+end)
+
+-- ============================================================
+--  TAB 6 — MOVEMENT (with Anti AFK)
 -- ============================================================
 local movePage = makeTab("move", "🏃", "Movement")
 
@@ -1607,6 +2158,45 @@ local function setJumpPower(v)
 	config.jumpPower = v
 end
 
+-- ============================================================
+--  Anti AFK  (same technique as Infinite Yield)
+--  Hooks LocalPlayer.Idled and simulates input via VirtualUser
+--  so Roblox doesn't kick you for being idle.
+-- ============================================================
+local antiAfkState = {
+	connection = nil,
+	enabled    = false,
+}
+
+local function enableAntiAfk()
+	if antiAfkState.connection then return end
+	antiAfkState.connection = LocalPlayer.Idled:Connect(function()
+		local VirtualUser = game:GetService("VirtualUser")
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new())
+	end)
+	antiAfkState.enabled = true
+end
+
+local function disableAntiAfk()
+	if antiAfkState.connection then
+		antiAfkState.connection:Disconnect()
+		antiAfkState.connection = nil
+	end
+	antiAfkState.enabled = false
+end
+
+local function setAntiAfk(state)
+	if state then
+		enableAntiAfk()
+		notify("Anti AFK", "Enabled — you won't be kicked for idling.", "success", 2)
+	else
+		disableAntiAfk()
+		notify("Anti AFK", "Disabled.", "info", 2)
+	end
+	config.antiAfk = state
+end
+
 local moveSec = makeSection(movePage, "Movement")
 
 makeSlider(moveSec, "Walk Speed", 8, 200, config.walkSpeed or 16, setWalkSpeed)
@@ -1618,14 +2208,33 @@ makeButton(moveSec, "Reset to Default", nil, "ghost", function()
 	notify("Movement", "Reset to default values.", "info", 2)
 end)
 
+local afkSec = makeSection(movePage, "Anti AFK")
+
+makeToggle(afkSec, "Anti AFK",
+	"Prevents Roblox from kicking you for idling (Infinite Yield style)",
+	config.antiAfk or false, function(v)
+		setAntiAfk(v)
+	end)
+
+-- apply Anti AFK on load if it was enabled in config
+if config.antiAfk then
+	task.defer(function()
+		enableAntiAfk()
+	end)
+end
+
 LocalPlayer.CharacterAdded:Connect(function()
 	task.wait(1)
 	setWalkSpeed(config.walkSpeed or 16)
 	setJumpPower(config.jumpPower or 50)
+	-- re-attach anti afk connection in case it was dropped on respawn
+	if config.antiAfk and not antiAfkState.connection then
+		enableAntiAfk()
+	end
 end)
 
 -- ============================================================
---  TAB 5 — SETTINGS
+--  TAB 7 — SETTINGS
 -- ============================================================
 local settingsPage = makeTab("settings", "⚙️", "Settings")
 
@@ -1666,18 +2275,13 @@ if IS_MOBILE then
 	makeParagraph(kbSec,
 		"Keybinds are unavailable on mobile. Tap the 🍬 button to toggle the window.")
 else
-	makeKeybind(kbSec, "Toggle Window", Enum.KeyCode.RightShift, function(_, pressed)
+	makeKeybind(kbSec, "Toggle Window", Enum.KeyCode.M, function(_, pressed)
 		if pressed then
 			win.Visible = not win.Visible
 		end
 	end)
-	makeKeybind(kbSec, "Close Window", Enum.KeyCode.RightControl, function(_, pressed)
-		if pressed and win.Visible then
-			win.Visible = false
-		end
-	end)
 	makeParagraph(kbSec,
-		"RightShift toggles the window. RightCtrl closes it while visible.")
+		"Press M to open or close the window.")
 end
 
 -- ============================================================
@@ -1710,7 +2314,7 @@ do
 end
 
 -- ============================================================
---  MINIMIZE / KEYBINDS / BOOT
+--  MINIMIZE / BOOT
 -- ============================================================
 local minimized = false
 local fullH = WIN_H
@@ -1723,22 +2327,6 @@ minBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Desktop keybinds: RightShift toggles, RightCtrl closes
-if not IS_MOBILE then
-	UserInputService.InputBegan:Connect(function(input, gpe)
-		if gpe then return end
-		if input.KeyCode == Enum.KeyCode.RightShift then
-			win.Visible = not win.Visible
-		elseif input.KeyCode == Enum.KeyCode.RightControl then
-			if win.Visible then
-				win.Visible = false
-				notify("Florence Hub", "Closed. Press RightShift to reopen.",
-					"info", 2)
-			end
-		end
-	end)
-end
-
 -- boot
 switchTab("home")
 setStatus("Ready")
@@ -1746,7 +2334,7 @@ setStatus("Ready")
 task.delay(0.4, function()
 	notify("Florence Hub",
 		IS_MOBILE and "Tap 🍬 to toggle. Drag it to move."
-			or "RightShift = toggle • RightCtrl = close • Drag 🍬 to move",
+			or "M = toggle • Drag 🍬 to move",
 		"success", 4)
 end)
 
@@ -1754,4 +2342,4 @@ task.delay(0.6, function()
 	doScan()
 end)
 
-print("[Florence Hub] v2.3 loaded (" .. (IS_MOBILE and "mobile" or "desktop") .. ").")
+print("[Florence Hub] v3.8 loaded (" .. (IS_MOBILE and "mobile" or "desktop") .. ").")
