@@ -1,7 +1,7 @@
 -- ============================================================
---  FLORENCE HUB  |  v4.0  •  Standalone Edition
+--  FLORENCE HUB  |  v4.2  •  Standalone Edition
 --  Mobile-aware • Draggable toggle • M key toggle
---  Auto Claim (TP → fire → wait for disappear → next item)
+--  Auto Claim (drop-in TP + camera down + fire)
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -11,6 +11,7 @@ local RunService       = game:GetService("RunService")
 local HttpService      = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
+local Camera      = workspace.CurrentCamera
 
 -- ============================================================
 --  PLATFORM DETECTION
@@ -579,7 +580,7 @@ local statusRight = new("TextLabel", {
 	Size = UDim2.new(0.5, -10, 1, 0),
 	Position = UDim2.new(0.5, 0, 0, 0),
 	BackgroundTransparency = 1,
-	Text = "v4.0  •  " .. (IS_MOBILE and "mobile" or "desktop"),
+	Text = "v4.2  •  " .. (IS_MOBILE and "mobile" or "desktop"),
 	TextColor3 = P.Muted,
 	Font = Enum.Font.Gotham,
 	TextSize = fs(10),
@@ -1149,10 +1150,10 @@ local homePage = makeTab("home", "🏠", "Home")
 
 local heroSec = makeSection(homePage, "Welcome")
 makeParagraph(heroSec,
-	"Florence Hub v4.0 — standalone with mobile-aware sizing. "
+	"Florence Hub v4.2 — standalone with mobile-aware sizing. "
 	.. "Drag the 🍬 button anywhere. Tap it to open/close the window. "
 	.. "Press M to toggle.")
-makeLabel(heroSec, "🎁  Auto Claim — TP → fire → wait for vanish → next item")
+makeLabel(heroSec, "🎁  Auto Claim — drop-in TP + camera down + fire")
 makeLabel(heroSec, "🍬  Scanner — search Workspace by name")
 makeLabel(heroSec, "⚡  Instant Prompt — one-tap ProximityPrompts")
 makeLabel(heroSec, "👁  Patrol ESP — live scan workspace.Patrol and ESP models")
@@ -1160,18 +1161,21 @@ makeLabel(heroSec, "🏃  Movement — walkspeed / jumppower / anti-afk")
 makeLabel(heroSec, "⚙️  Settings — keybind + config save/load")
 
 -- ============================================================
---  TAB 2 — AUTO CLAIM  (TP → fire → wait for vanish → next)
+--  TAB 2 — AUTO CLAIM  (drop-in TP + camera look-down + fire)
 -- ============================================================
 local claimPage = makeTab("claim", "🎁", "Auto Claim")
 
-local HALLOWEEN_NAME = "Halloween"
-local SPAWN_NAME     = "SpawnPoint"
-local ITEM_KEYWORD   = "item"
-local TWEEN_TIME     = 0.4
-local STAND_OFFSET   = 1
-local DETECT_RADIUS  = 5
-local FIRE_COOLDOWN  = 0.75
-local VANISH_TIMEOUT = 20    -- give up on an item after this many seconds
+local HALLOWEEN_NAME    = "Halloween"
+local SPAWN_NAME        = "SpawnPoint"
+local ITEM_KEYWORD      = "item"
+local DROP_HEIGHT       = 2      -- small hop above the item
+local TWEEN_UP_TIME     = 0.45
+local TWEEN_DOWN_TIME   = 0.35
+local STAND_OFFSET      = 1
+local DETECT_RADIUS     = 5
+local CAMERA_HOLD_TIME  = 0.45
+local FIRE_COOLDOWN     = 0.75
+local VANISH_TIMEOUT    = 20
 
 local claimState = {
 	enabled     = false,
@@ -1227,7 +1231,8 @@ local function firePromptsIn(model)
 	return count
 end
 
-local function tweenToModel(model)
+-- Drop-in TP: small hop above the model → land on it
+local function tweenDropIn(model)
 	local anchor = getModelAnchor(model)
 	if not anchor then return false end
 
@@ -1236,19 +1241,108 @@ local function tweenToModel(model)
 	if not hrp then return false end
 
 	local targetPos = anchor.Position
-	local fromPos   = targetPos + Vector3.new(0, 0, STAND_OFFSET)
-	local targetCF  = CFrame.new(fromPos, targetPos)
+	local abovePos  = targetPos + Vector3.new(0, DROP_HEIGHT, 0)
+	local landPos   = targetPos + Vector3.new(0, 0, STAND_OFFSET)
 
 	claimState.isTweening = true
-	local tw = TweenService:Create(
+
+	-- PHASE 1: hop above the item, HRP facing down at it
+	local upTween = TweenService:Create(
 		hrp,
-		TweenInfo.new(TWEEN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{ CFrame = targetCF }
+		TweenInfo.new(TWEEN_UP_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ CFrame = CFrame.new(abovePos, targetPos) }
 	)
-	tw:Play()
-	tw.Completed:Wait()
+	upTween:Play()
+	upTween.Completed:Wait()
+
+	task.wait(0.08)
+
+	-- PHASE 2: drop onto the item, HRP facing it
+	local downTween = TweenService:Create(
+		hrp,
+		TweenInfo.new(TWEEN_DOWN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+		{ CFrame = CFrame.new(landPos, targetPos) }
+	)
+	downTween:Play()
+	downTween.Completed:Wait()
+
 	claimState.isTweening = false
 	return true
+end
+
+-- Force the camera to look DOWN at the item's prompt for a brief moment
+local function forceCameraLookDown(model)
+	local char = LocalPlayer.Character
+	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+	local anchor = getModelAnchor(model)
+	if not (hrp and anchor) then return end
+
+	local targetPos = anchor.Position
+
+	local prevSubject = Camera.CameraSubject
+
+	pcall(function()
+		Camera.CameraType = Enum.CameraType.Scriptable
+		local camPos = hrp.Position + Vector3.new(0, 7, 0)
+		Camera.CFrame = CFrame.new(camPos, targetPos)
+		Camera.Focus = CFrame.new(targetPos)
+	end)
+
+	task.wait(CAMERA_HOLD_TIME)
+
+	local fired = firePromptsIn(model)
+	if fired > 0 then
+		claimState.claimCount += fired
+		local dist = (anchor.Position - hrp.Position).Magnitude
+		notify("Auto Claim",
+			string.format("Claimed %s  (%d prompt%s, %.1f studs)",
+				model.Name, fired, fired == 1 and "" or "s", dist),
+			"success", 2)
+	end
+
+	pcall(function()
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum then
+			Camera.CameraSubject = hum
+		elseif prevSubject then
+			Camera.CameraSubject = prevSubject
+		end
+		Camera.CameraType = Enum.CameraType.Custom
+	end)
+end
+
+local function processItem(model)
+	claimState.currentName = model.Name
+
+	tweenDropIn(model)
+	task.wait(0.1)
+
+	local char = LocalPlayer.Character
+	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+	local anchor = getModelAnchor(model)
+	if not (hrp and anchor) then return end
+
+	local dist = (anchor.Position - hrp.Position).Magnitude
+	if dist > DETECT_RADIUS then return end
+
+	forceCameraLookDown(model)
+
+	local startTime = tick()
+	while claimState.enabled do
+		local spawnPath = getSpawnPath()
+		if not stillExists(model, spawnPath) then
+			return
+		end
+		if tick() - startTime > VANISH_TIMEOUT then
+			notify("Auto Claim", "Gave up on " .. model.Name, "warn", 2)
+			return
+		end
+		local reFired = firePromptsIn(model)
+		if reFired > 0 then
+			claimState.claimCount += reFired
+		end
+		task.wait(0.25)
+	end
 end
 
 local function collectItems(sortByDistance)
@@ -1279,58 +1373,6 @@ local function collectItems(sortByDistance)
 	return list
 end
 
--- TP to item, fire its prompt, then WAIT until it disappears from the scan
-local function processItem(model)
-	claimState.currentName = model.Name
-
-	-- 1) TP to the item
-	tweenToModel(model)
-	task.wait(0.2)
-
-	-- 2) Confirm distance ≤ DETECT_RADIUS before firing
-	local char = LocalPlayer.Character
-	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-	local anchor = getModelAnchor(model)
-	if hrp and anchor then
-		local dist = (anchor.Position - hrp.Position).Magnitude
-		if dist <= DETECT_RADIUS then
-			local fired = firePromptsIn(model)
-			if fired > 0 then
-				claimState.claimCount += fired
-				notify("Auto Claim",
-					string.format("Claimed %s  (%d prompt%s, %.1f studs)",
-						model.Name, fired, fired == 1 and "" or "s", dist),
-					"success", 2)
-			end
-		end
-	end
-
-	-- 3) WAIT until the item disappears (or times out)
-	--    While waiting, keep firing the prompt every FIRE_COOLDOWN seconds
-	--    in case the server didn't register the first click.
-	local startTime = tick()
-	while claimState.enabled do
-		local spawnPath = getSpawnPath()
-		if not stillExists(model, spawnPath) then
-			-- item is gone → move on
-			return
-		end
-		if tick() - startTime > VANISH_TIMEOUT then
-			-- give up on this item after timeout
-			notify("Auto Claim",
-				"Gave up on " .. model.Name .. " (timeout).",
-				"warn", 2)
-			return
-		end
-		-- retry firing
-		local reFired = firePromptsIn(model)
-		if reFired > 0 then
-			claimState.claimCount += reFired
-		end
-		task.wait(0.25)
-	end
-end
-
 local function startClaimLoop()
 	if claimState.loopRunning then return end
 	claimState.loopRunning = true
@@ -1350,8 +1392,6 @@ local function startClaimLoop()
 					claimState.currentName = "-"
 					task.wait(0.35)
 				else
-					-- hand off to processItem which will wait until the
-					-- item is gone from the scan before returning
 					processItem(items[1])
 				end
 			end
@@ -1383,7 +1423,7 @@ end
 local claimMainSec = makeSection(claimPage, "Auto Claim")
 
 makeToggle(claimMainSec, "Enable Auto Claim",
-	"TP → fire prompt → wait for item to disappear → next item (loops forever)",
+	"Drop-in TP + camera look-down + fire, then wait for the item to disappear",
 	config.autoClaim or false, function(v)
 		setClaimEnabled(v)
 		config.autoClaim = v
@@ -1399,18 +1439,21 @@ local claimQueueLbl  = makeLabel(claimStatusSec, "In queue: 0", P.Muted)
 
 local claimInfoSec = makeSection(claimPage, "Info")
 makeParagraph(claimInfoSec,
-	"Live-loops while enabled. Every cycle it scans workspace."
-	.. HALLOWEEN_NAME .. "." .. SPAWN_NAME .. " for any item whose name contains \""
-	.. ITEM_KEYWORD .. "\", tweens to the NEAREST one, fires its ProximityPrompt, "
-	.. "then WAITS until that item disappears from the scan before moving on "
-	.. "(re-fires every " .. FIRE_COOLDOWN .. "s in case the server didn't "
-	.. "register the click). If the item doesn't disappear within "
+	"Live-loops while enabled. For each item found in workspace."
+	.. HALLOWEEN_NAME .. "." .. SPAWN_NAME .. " it: "
+	.. "(1) hops " .. DROP_HEIGHT .. " stud above the item, "
+	.. "(2) drops onto it, "
+	.. "(3) forces the camera to look down at the prompt for "
+	.. CAMERA_HOLD_TIME .. "s, "
+	.. "(4) fires the ProximityPrompt, "
+	.. "(5) waits until the item disappears before moving on (retries every "
+	.. FIRE_COOLDOWN .. "s). If the item doesn't disappear within "
 	.. VANISH_TIMEOUT .. "s, it gives up and moves to the next one.")
 
 task.spawn(function()
 	while gui.Parent do
 		if claimState.enabled then
-			local suffix = claimState.isTweening and "  •  tweening…" or ""
+			local suffix = claimState.isTweening and "  •  dropping in…" or ""
 			if claimState.itemsSeen > 0 then
 				claimStatusLbl.Text = "● Claiming…" .. suffix
 				claimStatusLbl.TextColor3 = P.Accent
@@ -2049,7 +2092,7 @@ makeButton(patrolActionSec, "Force Refresh",
 	end)
 
 makeButton(patrolActionSec, "Clear All ESP",
-	"Remove every ESP without disabling the toggle", "ghost", function()
+		"Remove every ESP without disabling the toggle", "ghost", function()
 		clearAllESP()
 		notify("Patrol ESP", "ESP cleared.", "info", 2)
 	end)
@@ -2279,4 +2322,4 @@ task.delay(0.6, function()
 	doScan()
 end)
 
-print("[Florence Hub] v4.0 loaded (" .. (IS_MOBILE and "mobile" or "desktop") .. ").")
+print("[Florence Hub] v4.2 loaded (" .. (IS_MOBILE and "mobile" or "desktop") .. ").")
