@@ -324,21 +324,21 @@ Tabs.PlayerTab:Toggle({
     end,
 })
 
-local isEnabled = false
+-- ⭐ Instant Prompt — its own flag
+local instantPromptEnabled = false
 
 Tabs.PlayerTab:Toggle({
     Title = "Instant Prompt",
     Desc = "Make the Prompt Becomes One Tap",
     Value = false,
     Callback = function(state)
-        isEnabled = state
+        instantPromptEnabled = state
 
         local function updatePrompts()
             for _, descendant in ipairs(workspace:GetDescendants()) do
                 if descendant:IsA("ProximityPrompt") then
-                    if isEnabled then
+                    if instantPromptEnabled then
                         descendant.HoldDuration = 0
-                    else
                     end
                 end
             end
@@ -346,9 +346,9 @@ Tabs.PlayerTab:Toggle({
 
         updatePrompts()
 
-        if isEnabled then
+        if instantPromptEnabled then
             workspace.DescendantAdded:Connect(function(descendant)
-                if isEnabled and descendant:IsA("ProximityPrompt") then
+                if instantPromptEnabled and descendant:IsA("ProximityPrompt") then
                     descendant.HoldDuration = 0
                 end
             end)
@@ -373,8 +373,15 @@ local INSTANT_SPEED = 9999
 local SLIDE_SPEED   = 600
 
 local currentSavedCFrame = nil
-local isEnabled = false
+
+-- ⭐ Anti Chase — its own flag
+local antiChaseEnabled = false
 local isExecuting = false
+
+-- ⭐ Cross-toggle references (set after both toggles are created)
+local antiChaseToggle
+local friendlyDropToggle
+local uiUpdating = false   -- prevents infinite loops when auto-toggling
 
 local function updateCamera(character)
 	if character and character:FindFirstChild("Humanoid") then
@@ -431,11 +438,11 @@ local function isGuiActive(gui)
 	return false
 end
 
--- Main Loop (Background Task)
+-- Anti Chase loop (independent)
 task.spawn(function()
 	while true do
 		task.wait(0.15)
-		if isEnabled and not isExecuting then
+		if antiChaseEnabled and not isExecuting then
 			local dropEggGui = playerGui:FindFirstChild("DropHeldEgg")
 
 			if isGuiActive(dropEggGui) then
@@ -463,16 +470,6 @@ task.spawn(function()
 		end
 	end
 end)
-
--- ==================== UI LIBRARY TOGGLE ====================
-Tabs.PlayerTab:Toggle({
-	Title = "Anti Chase",
-	Desc = "Bugged the Egg Guardian (Sometimes Not Work)",
-	Value = false,
-	Callback = function(state)
-		isEnabled = state
-	end,
-})
 
 -- ══════════════════════════════════════════════════════════════════
 --  FRIENDLY DROP  —  hop + drop logic
@@ -688,20 +685,65 @@ do
 	FriendlyDrop.Config     = CFG
 end
 
-Tabs.PlayerTab:Toggle({
+-- ⭐ ANTICHA SE TOGGLE (with auto-exclude of Friendly Drop)
+antiChaseToggle = Tabs.PlayerTab:Toggle({
+	Title = "Anti Chase",
+	Desc = "Bugged the Egg Guardian (Sometimes Not Work)",
+	Value = false,
+	Callback = function(state)
+		if uiUpdating then return end
+		antiChaseEnabled = state
+		print("[AntiChase] enabled = " .. tostring(state))
+
+		-- ⭐ auto-disable Friendly Drop if turning ON
+		if state and FriendlyDrop.IsEnabled() then
+			uiUpdating = true
+			pcall(function()
+				if friendlyDropToggle then
+					if friendlyDropToggle.Set then friendlyDropToggle:Set(false)
+					elseif friendlyDropToggle.SetValue then friendlyDropToggle:SetValue(false) end
+				end
+			end)
+			uiUpdating = false
+
+			FriendlyDrop.SetEnabled(false)
+			FriendlyDrop.Config.Debug = false
+			print("[AntiChase] auto-disabled Friendly Drop")
+		end
+	end,
+})
+
+-- ⭐ FRIENDLY DROP TOGGLE (with auto-exclude of Anti Chase)
+friendlyDropToggle = Tabs.PlayerTab:Toggle({
 	Title = "Friendly Drop",
 	Desc = "Multi-hop to forest & drop held egg when DropHeldEgg opens",
 	Value = false,
 	Callback = function(state)
+		if uiUpdating then return end
 		FriendlyDrop.SetEnabled(state)
 		FriendlyDrop.Config.Debug = state
 		print("[FriendlyDrop] enabled = " .. tostring(state))
+
+				-- ⭐ auto-disable Anti Chase if turning ON
+		if state and antiChaseEnabled then
+			uiUpdating = true
+			pcall(function()
+				if antiChaseToggle then
+					if antiChaseToggle.Set then antiChaseToggle:Set(false)
+					elseif antiChaseToggle.SetValue then antiChaseToggle:SetValue(false) end
+				end
+			end)
+			uiUpdating = false
+
+			antiChaseEnabled = false
+			print("[FriendlyDrop] auto-disabled Anti Chase")
+		end
 	end,
 })
 
 -- ══════════════════════════════════════════════════════════════════
 --  FLY  —  Infinite Yield-style flight
---  • WASD to move · Space up · Shift down · F to toggle
+--  • WASD · Space up · Shift down · F to toggle
 --  • Speed adjustable 1–100
 -- ══════════════════════════════════════════════════════════════════
 local Fly = {}
@@ -712,11 +754,11 @@ do
 
 	local enabled    = false
 	local speedValue = 20
-	local SPEED_UNIT = 5           -- max (100) = 500 studs/s
+	local SPEED_UNIT = 5
 
 	local bodyGyro, bodyVel, heartConn, humBackup
-	local toggleUI                 -- set via Fly.AttachToggle
-	local uiUpdating = false       -- prevent toggle loop
+	local toggleUI
+	local flyUiUpdating = false
 
 	local function getHRP()
 		local char = LP.Character
@@ -812,14 +854,13 @@ do
 		enabled = v
 		if enabled then start() else stop() end
 
-		-- sync the WindUI toggle if flipped from keybind
-		if toggleUI and not uiUpdating then
-			uiUpdating = true
+		if toggleUI and not flyUiUpdating then
+			flyUiUpdating = true
 			pcall(function()
 				if toggleUI.Set then toggleUI:Set(enabled)
 				elseif toggleUI.SetValue then toggleUI:SetValue(enabled) end
 			end)
-			uiUpdating = false
+			flyUiUpdating = false
 		end
 
 		print("[Fly] enabled = " .. tostring(enabled))
@@ -833,7 +874,6 @@ do
 	Fly.GetSpeed  = function() return speedValue end
 	Fly.AttachToggle = function(tog) toggleUI = tog end
 
-	-- ⭐ F keybind — toggles Fly on/off
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		if input.KeyCode == Enum.KeyCode.F then
@@ -849,7 +889,6 @@ local Tabs = {
     }),
 }
 
--- ⭐ Fly toggle (Misc tab)
 local flyToggle = Tabs.MiscTab:Toggle({
     Title = "Fly",
     Desc = "WASD · Space up · Shift down · Press F to toggle",
@@ -861,7 +900,6 @@ local flyToggle = Tabs.MiscTab:Toggle({
 
 Fly.AttachToggle(flyToggle)
 
--- ⭐ Fly speed slider (1–100)
 Tabs.MiscTab:Slider({
     Title = "Fly Speed",
     Desc = "1 = slow  ·  100 = fast",
