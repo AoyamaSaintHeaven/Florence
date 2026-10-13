@@ -378,11 +378,6 @@ local currentSavedCFrame = nil
 local antiChaseEnabled = false
 local isExecuting = false
 
--- ⭐ Cross-toggle references (set after both toggles are created)
-local antiChaseToggle
-local friendlyDropToggle
-local uiUpdating = false   -- prevents infinite loops when auto-toggling
-
 local function updateCamera(character)
 	if character and character:FindFirstChild("Humanoid") then
 		camera.CameraSubject = character.Humanoid
@@ -438,7 +433,7 @@ local function isGuiActive(gui)
 	return false
 end
 
--- Anti Chase loop (independent)
+-- Anti Chase loop
 task.spawn(function()
 	while true do
 		task.wait(0.15)
@@ -471,280 +466,19 @@ task.spawn(function()
 	end
 end)
 
--- ══════════════════════════════════════════════════════════════════
---  FRIENDLY DROP  —  hop + drop logic
--- ══════════════════════════════════════════════════════════════════
-local FriendlyDrop = {}
-do
-	local FD_RS  = game:GetService("ReplicatedStorage")
-	local FD_Run = game:GetService("RunService")
-	local FD_LP  = game:GetService("Players").LocalPlayer
-	local FD_PG  = FD_LP:WaitForChild("PlayerGui")
-
-	local CFG = {
-		DropRemotePath = {"Packages", "Networking", "RF/EggWorld/AskFieldEggDrop"},
-		CheckInterval  = 0.5,
-		Cooldown       = 3,
-		SettleDelay    = 0.15,
-		ForestX        = 599.91,
-		ForestY        = 72.17,
-		ForestZ        = nil,
-		ForestRadius   = 8,
-		HopDelay       = 0,
-		Debug          = true,
-		HopWaypoints = {
-			{3097.27, 72.31}, {2997.74, 72.31}, {2899.69, 72.31}, {2787.67, 72.31},
-			{2738.44, 72.32}, {2704.82, 72.32}, {2600.35, 72.33}, {2438.60, 72.34},
-			{2359.84, 72.35}, {2285.73, 72.35}, {2178.38, 72.36}, {1991.96, 72.36},
-			{1933.81, 72.37}, {1821.70, 72.37}, {1731.50, 72.38}, {1657.21, 72.38},
-			{1601.06, 72.41}, {1476.80, 72.49}, {1350.37, 72.57}, {1281.97, 72.57},
-			{1111.38, 72.49}, {980.40, 72.42}, {956.22, 72.42}, {883.68, 72.42},
-			{758.07, 72.43}, {613.34, 72.44}, {609.38, 72.41}, {602.18, 72.33},
-			{599.91, 72.23}, {599.91, 72.17},
-		},
-	}
-
-	local function waitForPath(root, ...)
-		local node = root
-		for _, seg in ipairs({...}) do
-			local ok, child = pcall(function() return node:WaitForChild(seg, 10) end)
-			if not ok or not child then return nil end
-			node = child
-		end
-		return node
-	end
-
-	local function getHRP()
-		local char = FD_LP.Character
-		if not char then return nil, nil end
-		return char:FindFirstChild("HumanoidRootPart"), char:FindFirstChildOfClass("Humanoid")
-	end
-
-	local function disableCharCollide(char)
-		local saved = {}
-		if not char then return saved end
-		for _, d in ipairs(char:GetDescendants()) do
-			if d:IsA("BasePart") then
-				saved[d] = d.CanCollide
-				d.CanCollide = false
-			end
-		end
-		return saved
-	end
-
-	local function restoreCharCollide(saved)
-		for p, s in pairs(saved) do
-			if p and p.Parent then p.CanCollide = s end
-		end
-	end
-
-	local dropRemote
-	local function getDropRemote()
-		if dropRemote and dropRemote.Parent then return dropRemote end
-		dropRemote = waitForPath(FD_RS, unpack(CFG.DropRemotePath))
-		return dropRemote
-	end
-
-	local function fireDrop()
-		local r = getDropRemote()
-		if not r then
-			warn("[FriendlyDrop] Drop remote not found: " .. table.concat(CFG.DropRemotePath, "."))
-			return false
-		end
-		local ok, err = pcall(function() r:InvokeServer({ Reason = "PlayerRequest" }) end)
-		if not ok then warn("[FriendlyDrop] Drop failed: " .. tostring(err)); return false end
-		if CFG.Debug then print("[FriendlyDrop] ✓ drop remote fired") end
-		return true
-	end
-
-	local function isAtForest()
-		local hrp = getHRP()
-		if not hrp then return false end
-		local z = CFG.ForestZ or hrp.Position.Z
-		local target = Vector3.new(CFG.ForestX, CFG.ForestY, z)
-		return (hrp.Position - target).Magnitude <= CFG.ForestRadius
-	end
-
-	local fdEnabled = false
-	local isHopping = false
-
-	local function multiHopToForest()
-		if not fdEnabled or isHopping then return false end
-		local hrp, hum = getHRP()
-		if not hrp then return false end
-		local char = hrp.Parent
-		pcall(function() hrp:SetNetworkOwner(FD_LP) end)
-		isHopping = true
-		local z = CFG.ForestZ or hrp.Position.Z
-
-		if CFG.Debug then
-			print(string.format("[FriendlyDrop] HOP START: (%.1f, %.1f, %.1f) waypoints=%d",
-				hrp.Position.X, hrp.Position.Y, hrp.Position.Z, #CFG.HopWaypoints))
-		end
-
-		local oW, oJ, oP, oAR
-		if hum then
-			oW, oJ = hum.WalkSpeed, hum.JumpPower
-			oP, oAR = hum.PlatformStand, hum.AutoRotate
-			hum.WalkSpeed = 0; hum.JumpPower = 0
-			hum.PlatformStand = true; hum.AutoRotate = false
-			pcall(function() hum:ChangeState(Enum.HumanoidStateType.Physics) end)
-		end
-		local savedC = disableCharCollide(char)
-		hrp.AssemblyLinearVelocity = Vector3.zero
-		hrp.AssemblyAngularVelocity = Vector3.zero
-
-		local reached = 0
-		for i, wp in ipairs(CFG.HopWaypoints) do
-			if not hrp.Parent or not fdEnabled then break end
-			local t = Vector3.new(wp[1], wp[2], z)
-			hrp.CFrame = CFrame.new(t)
-			if (hrp.Position - t).Magnitude > 1 then hrp.Position = t end
-			reached = i
-			if CFG.Debug and (i <= 5 or i % 5 == 0 or i == #CFG.HopWaypoints) then
-				print(string.format("[FriendlyDrop]   hop %d/%d → (%.2f, %.2f)",
-					i, #CFG.HopWaypoints, hrp.Position.X, hrp.Position.Y))
-			end
-			if CFG.HopDelay > 0 then task.wait(CFG.HopDelay) else FD_Run.Heartbeat:Wait() end
-		end
-
-		if hrp.Parent then
-			local f = Vector3.new(CFG.ForestX, CFG.ForestY, z)
-			hrp.CFrame = CFrame.new(f)
-			hrp.AssemblyLinearVelocity = Vector3.zero
-			hrp.AssemblyAngularVelocity = Vector3.zero
-		end
-		restoreCharCollide(savedC)
-		if hum then
-			hum.WalkSpeed = oW or 16; hum.JumpPower = oJ or 50
-			hum.PlatformStand = oP or false; hum.AutoRotate = oAR ~= false
-			pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
-		end
-		isHopping = false
-		local ok = reached == #CFG.HopWaypoints and isAtForest()
-		if CFG.Debug then print("[FriendlyDrop] HOP DONE atForest=" .. tostring(ok)) end
-		return ok
-	end
-
-	local DROPGUI_NAMES = {
-		["DropHeldEgg"]=true, ["DropHeldEggGui"]=true, ["DropHeldEggGUI"]=true,
-		["HeldEgg"]=true, ["HeldEggGui"]=true,
-		["DropEgg"]=true, ["DropEggGui"]=true,
-		["EggDrop"]=true, ["EggDropGui"]=true, ["DropButton"]=true,
-	}
-	local function isDropGUIActive()
-		for _, g in ipairs(FD_PG:GetDescendants()) do
-			if g:IsA("ScreenGui") or g:IsA("GuiObject") then
-				if DROPGUI_NAMES[g.Name] then
-					local on = false
-					if g:IsA("ScreenGui") then on = g.Enabled else on = g.Visible end
-					if on then return true end
-				end
-			end
-		end
-		return false
-	end
-
-	task.spawn(function()
-		task.wait(2)
-		local wasOn, lastDropTime = false, 0
-		local prevEnabled = false
-		while true do
-			task.wait(CFG.CheckInterval)
-
-			if fdEnabled and not prevEnabled then
-				wasOn = false
-			end
-			prevEnabled = fdEnabled
-
-			if not fdEnabled or isHopping then
-				wasOn = isDropGUIActive()
-				continue
-			end
-
-			local nowOn = isDropGUIActive()
-			local rising = nowOn and not wasOn
-			wasOn = nowOn
-			if not rising then continue end
-			if tick() - lastDropTime < CFG.Cooldown then continue end
-
-			print("[FriendlyDrop] DropHeldEgg ENABLED → hop")
-			local ok = multiHopToForest()
-			if ok and isAtForest() and fdEnabled then
-				task.wait(CFG.SettleDelay)
-				if isAtForest() then
-					if fireDrop() then lastDropTime = tick() end
-				end
-			end
-			task.wait(1.5)
-		end
-	end)
-
-	FriendlyDrop.SetEnabled = function(v) fdEnabled = not not v end
-	FriendlyDrop.IsEnabled  = function() return fdEnabled end
-	FriendlyDrop.Config     = CFG
-end
-
--- ⭐ ANTICHA SE TOGGLE (with auto-exclude of Friendly Drop)
-antiChaseToggle = Tabs.PlayerTab:Toggle({
+-- ⭐ ANTI CHASE TOGGLE
+Tabs.PlayerTab:Toggle({
 	Title = "Anti Chase",
 	Desc = "Bugged the Egg Guardian (Sometimes Not Work)",
 	Value = false,
 	Callback = function(state)
-		if uiUpdating then return end
 		antiChaseEnabled = state
 		print("[AntiChase] enabled = " .. tostring(state))
-
-		-- ⭐ auto-disable Friendly Drop if turning ON
-		if state and FriendlyDrop.IsEnabled() then
-			uiUpdating = true
-			pcall(function()
-				if friendlyDropToggle then
-					if friendlyDropToggle.Set then friendlyDropToggle:Set(false)
-					elseif friendlyDropToggle.SetValue then friendlyDropToggle:SetValue(false) end
-				end
-			end)
-			uiUpdating = false
-
-			FriendlyDrop.SetEnabled(false)
-			FriendlyDrop.Config.Debug = false
-			print("[AntiChase] auto-disabled Friendly Drop")
-		end
-	end,
-})
-
--- ⭐ FRIENDLY DROP TOGGLE (with auto-exclude of Anti Chase)
-friendlyDropToggle = Tabs.PlayerTab:Toggle({
-	Title = "Friendly Drop",
-	Desc = "Multi-hop to forest & drop held egg when DropHeldEgg opens",
-	Value = false,
-	Callback = function(state)
-		if uiUpdating then return end
-		FriendlyDrop.SetEnabled(state)
-		FriendlyDrop.Config.Debug = state
-		print("[FriendlyDrop] enabled = " .. tostring(state))
-
-				-- ⭐ auto-disable Anti Chase if turning ON
-		if state and antiChaseEnabled then
-			uiUpdating = true
-			pcall(function()
-				if antiChaseToggle then
-					if antiChaseToggle.Set then antiChaseToggle:Set(false)
-					elseif antiChaseToggle.SetValue then antiChaseToggle:SetValue(false) end
-				end
-			end)
-			uiUpdating = false
-
-			antiChaseEnabled = false
-			print("[FriendlyDrop] auto-disabled Anti Chase")
-		end
 	end,
 })
 
 -- ══════════════════════════════════════════════════════════════════
 --  FLY  —  Infinite Yield-style flight
---  • WASD · Space up · Shift down · F to toggle
---  • Speed adjustable 1–100
 -- ══════════════════════════════════════════════════════════════════
 local Fly = {}
 do
