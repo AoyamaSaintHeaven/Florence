@@ -1,7 +1,7 @@
 -- ============================================================
---  FLORENCE HUB  |  v4.2  •  Standalone Edition
+--  FLORENCE HUB  |  v4.5  •  Standalone Edition
 --  Mobile-aware • Draggable toggle • M key toggle
---  Auto Claim (drop-in TP + camera down + fire)
+--  Auto Claim • ESP (Patrol + Player)
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -127,6 +127,7 @@ local config = {
 	scanExact     = false,
 	instantPrompt = false,
 	patrolESP     = false,
+	playerESP     = false,
 	autoClaim     = false,
 	antiAfk       = false,
 	walkSpeed     = 16,
@@ -580,7 +581,7 @@ local statusRight = new("TextLabel", {
 	Size = UDim2.new(0.5, -10, 1, 0),
 	Position = UDim2.new(0.5, 0, 0, 0),
 	BackgroundTransparency = 1,
-	Text = "v4.2  •  " .. (IS_MOBILE and "mobile" or "desktop"),
+	Text = "v4.5  •  " .. (IS_MOBILE and "mobile" or "desktop"),
 	TextColor3 = P.Muted,
 	Font = Enum.Font.Gotham,
 	TextSize = fs(10),
@@ -1111,7 +1112,7 @@ local function makeKeybind(parent, title, default, callback)
 		end
 	end)
 
-	return { get = function() return currentKey end }
+return { get = function() return currentKey end }
 end
 
 local function makeParagraph(parent, text)
@@ -1150,27 +1151,24 @@ local homePage = makeTab("home", "🏠", "Home")
 
 local heroSec = makeSection(homePage, "Welcome")
 makeParagraph(heroSec,
-	"Florence Hub v4.2 — standalone with mobile-aware sizing. "
+	"Florence Hub v4.5 — standalone with mobile-aware sizing. "
 	.. "Drag the 🍬 button anywhere. Tap it to open/close the window. "
 	.. "Press M to toggle.")
-makeLabel(heroSec, "🎁  Auto Claim — drop-in TP + camera down + fire")
+makeLabel(heroSec, "🎁  Auto Claim — instant TP + camera down + fire")
 makeLabel(heroSec, "🍬  Scanner — search Workspace by name")
 makeLabel(heroSec, "⚡  Instant Prompt — one-tap ProximityPrompts")
-makeLabel(heroSec, "👁  Patrol ESP — live scan workspace.Patrol and ESP models")
+makeLabel(heroSec, "👁  ESP — live scan + Player ESP")
 makeLabel(heroSec, "🏃  Movement — walkspeed / jumppower / anti-afk")
 makeLabel(heroSec, "⚙️  Settings — keybind + config save/load")
 
 -- ============================================================
---  TAB 2 — AUTO CLAIM  (drop-in TP + camera look-down + fire)
+--  TAB 2 — AUTO CLAIM  (instant TP + camera down + fire)
 -- ============================================================
 local claimPage = makeTab("claim", "🎁", "Auto Claim")
 
 local HALLOWEEN_NAME    = "Halloween"
 local SPAWN_NAME        = "SpawnPoint"
 local ITEM_KEYWORD      = "item"
-local DROP_HEIGHT       = 2      -- small hop above the item
-local TWEEN_UP_TIME     = 0.45
-local TWEEN_DOWN_TIME   = 0.35
 local STAND_OFFSET      = 1
 local DETECT_RADIUS     = 5
 local CAMERA_HOLD_TIME  = 0.45
@@ -1181,7 +1179,6 @@ local claimState = {
 	enabled     = false,
 	loopRunning = false,
 	fired       = {},
-	isTweening  = false,
 	claimCount  = 0,
 	itemsSeen   = 0,
 	currentName = "-",
@@ -1231,8 +1228,7 @@ local function firePromptsIn(model)
 	return count
 end
 
--- Drop-in TP: small hop above the model → land on it
-local function tweenDropIn(model)
+local function instantTP(model)
 	local anchor = getModelAnchor(model)
 	if not anchor then return false end
 
@@ -1241,36 +1237,11 @@ local function tweenDropIn(model)
 	if not hrp then return false end
 
 	local targetPos = anchor.Position
-	local abovePos  = targetPos + Vector3.new(0, DROP_HEIGHT, 0)
 	local landPos   = targetPos + Vector3.new(0, 0, STAND_OFFSET)
-
-	claimState.isTweening = true
-
-	-- PHASE 1: hop above the item, HRP facing down at it
-	local upTween = TweenService:Create(
-		hrp,
-		TweenInfo.new(TWEEN_UP_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{ CFrame = CFrame.new(abovePos, targetPos) }
-	)
-	upTween:Play()
-	upTween.Completed:Wait()
-
-	task.wait(0.08)
-
-	-- PHASE 2: drop onto the item, HRP facing it
-	local downTween = TweenService:Create(
-		hrp,
-		TweenInfo.new(TWEEN_DOWN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-		{ CFrame = CFrame.new(landPos, targetPos) }
-	)
-	downTween:Play()
-	downTween.Completed:Wait()
-
-	claimState.isTweening = false
+	hrp.CFrame = CFrame.new(landPos, targetPos)
 	return true
 end
 
--- Force the camera to look DOWN at the item's prompt for a brief moment
 local function forceCameraLookDown(model)
 	local char = LocalPlayer.Character
 	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
@@ -1278,7 +1249,6 @@ local function forceCameraLookDown(model)
 	if not (hrp and anchor) then return end
 
 	local targetPos = anchor.Position
-
 	local prevSubject = Camera.CameraSubject
 
 	pcall(function()
@@ -1314,7 +1284,7 @@ end
 local function processItem(model)
 	claimState.currentName = model.Name
 
-	tweenDropIn(model)
+	instantTP(model)
 	task.wait(0.1)
 
 	local char = LocalPlayer.Character
@@ -1423,7 +1393,7 @@ end
 local claimMainSec = makeSection(claimPage, "Auto Claim")
 
 makeToggle(claimMainSec, "Enable Auto Claim",
-	"Drop-in TP + camera look-down + fire, then wait for the item to disappear",
+	"Instant TP + camera look-down + fire, then wait for the item to disappear",
 	config.autoClaim or false, function(v)
 		setClaimEnabled(v)
 		config.autoClaim = v
@@ -1441,21 +1411,17 @@ local claimInfoSec = makeSection(claimPage, "Info")
 makeParagraph(claimInfoSec,
 	"Live-loops while enabled. For each item found in workspace."
 	.. HALLOWEEN_NAME .. "." .. SPAWN_NAME .. " it: "
-	.. "(1) hops " .. DROP_HEIGHT .. " stud above the item, "
-	.. "(2) drops onto it, "
-	.. "(3) forces the camera to look down at the prompt for "
+	.. "(1) INSTANTLY teleports to the item, "
+	.. "(2) forces the camera to look down at the prompt for "
 	.. CAMERA_HOLD_TIME .. "s, "
-	.. "(4) fires the ProximityPrompt, "
-	.. "(5) waits until the item disappears before moving on (retries every "
-	.. FIRE_COOLDOWN .. "s). If the item doesn't disappear within "
-	.. VANISH_TIMEOUT .. "s, it gives up and moves to the next one.")
+	.. "(3) fires the ProximityPrompt, "
+	.. "(4) waits until the item disappears before moving on.")
 
 task.spawn(function()
 	while gui.Parent do
 		if claimState.enabled then
-			local suffix = claimState.isTweening and "  •  dropping in…" or ""
 			if claimState.itemsSeen > 0 then
-				claimStatusLbl.Text = "● Claiming…" .. suffix
+				claimStatusLbl.Text = "● Claiming…"
 				claimStatusLbl.TextColor3 = P.Accent
 			else
 				claimStatusLbl.Text = "● Scanning…  waiting for items"
@@ -1617,7 +1583,7 @@ local function addResultRow(inst, index)
 	}, resultsScroll)
 	corner(6, row)
 
-	local chip = new("TextLabel", {
+local chip = new("TextLabel", {
 		Size = UDim2.fromOffset(22, 22),
 		Position = UDim2.fromOffset(7, (ROW_H - 22) / 2),
 		BackgroundColor3 = P.Accent,
@@ -1902,9 +1868,9 @@ makeButton(promptActionSec, "Force Reset",
 	end)
 
 -- ============================================================
---  TAB 5 — PATROL ESP
+--  TAB 5 — ESP  (Patrol + Player)
 -- ============================================================
-local patrolPage = makeTab("patrol", "👁", "Patrol ESP")
+local patrolPage = makeTab("patrol", "👁", "ESP")
 
 local PATROL_PATH    = workspace:FindFirstChild("Patrol")
 local SCAN_INTERVAL  = 0.25
@@ -1912,7 +1878,17 @@ local ESP_FILL       = Color3.fromRGB(255,  80,  80)
 local ESP_OUTLINE    = Color3.fromRGB(180,  30,  30)
 local ESP_LABEL_Y    = 3
 
+local PLAYER_ESP_FILL     = Color3.fromRGB( 82, 220, 140)
+local PLAYER_ESP_OUTLINE  = Color3.fromRGB( 40, 160,  90)
+local PLAYER_ESP_LABEL_Y  = 3.5
+
 local patrolState = {
+	enabled     = false,
+	loopRunning = false,
+	esp         = {},
+}
+
+local playerEspState = {
 	enabled     = false,
 	loopRunning = false,
 	esp         = {},
@@ -2050,7 +2026,7 @@ local function setPatrolEnabled(state)
 			PATROL_PATH = workspace:FindFirstChild("Patrol")
 		end
 		if not PATROL_PATH then
-			notify("Patrol ESP", "workspace.Patrol not found.", "error", 3)
+			notify("ESP", "workspace.Patrol not found.", "error", 3)
 			patrolState.enabled = false
 			return
 		end
@@ -2062,6 +2038,156 @@ local function setPatrolEnabled(state)
 	end
 end
 
+-- ============================================================
+--  PLAYER ESP
+-- ============================================================
+local removePlayerESP
+
+local function addPlayerESP(plr)
+	if not plr or plr == LocalPlayer then return end
+	if playerEspState.esp[plr] then return end
+
+	local entry = { conns = {} }
+
+	local hl = Instance.new("Highlight")
+	hl.Name                = "PlayerESP"
+	hl.FillColor           = PLAYER_ESP_FILL
+	hl.OutlineColor        = PLAYER_ESP_OUTLINE
+	hl.FillTransparency    = 0.5
+	hl.OutlineTransparency = 0
+	hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.Parent              = gui
+	entry.highlight        = hl
+
+	local function attachToCharacter(char)
+		if hl and char then
+			hl.Adornee = char
+		end
+	end
+
+	attachToCharacter(plr.Character)
+
+	entry.conns[#entry.conns + 1] = plr.CharacterAdded:Connect(function(newChar)
+		attachToCharacter(newChar)
+	end)
+
+	local function makeBillboard()
+		if not plr.Character then return end
+		local head = plr.Character:FindFirstChild("Head")
+			or plr.Character:FindFirstChildWhichIsA("BasePart", true)
+		if not head then return end
+
+		if entry.billboard then
+			pcall(function() entry.billboard:Destroy() end)
+		end
+
+		local bb = Instance.new("BillboardGui")
+		bb.Name        = "PlayerESPLabel"
+		bb.Size        = UDim2.fromOffset(180, 32)
+		bb.StudsOffset = Vector3.new(0, PLAYER_ESP_LABEL_Y, 0)
+		bb.AlwaysOnTop = true
+		bb.Adornee     = head
+		bb.Parent      = gui
+
+		local lbl = Instance.new("TextLabel")
+		lbl.Size                   = UDim2.fromScale(1, 1)
+		lbl.BackgroundTransparency = 1
+		lbl.Text                   = plr.Name
+		lbl.TextColor3             = Color3.new(1, 1, 1)
+		lbl.TextStrokeTransparency = 0
+		lbl.TextStrokeColor3       = Color3.new(0, 0, 0)
+		lbl.Font                   = Enum.Font.GothamBold
+		lbl.TextSize               = 14
+		lbl.Parent                 = bb
+
+		entry.billboard = bb
+		entry.label     = lbl
+		entry.anchor    = head
+	end
+
+	makeBillboard()
+
+	entry.conns[#entry.conns + 1] = plr.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		makeBillboard()
+	end)
+
+	entry.conns[#entry.conns + 1] = RunService.RenderStepped:Connect(function()
+		if not plr.Parent then return end
+		if entry.label and entry.anchor and entry.anchor.Parent then
+			local char = LocalPlayer.Character
+			local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local dist = (entry.anchor.Position - hrp.Position).Magnitude
+				entry.label.Text = plr.Name .. "  [" .. math.floor(dist) .. "m]"
+			end
+		end
+	end)
+
+	playerEspState.esp[plr] = entry
+end
+
+removePlayerESP = function(plr)
+	local entry = playerEspState.esp[plr]
+	if not entry then return end
+	playerEspState.esp[plr] = nil
+
+	for _, c in ipairs(entry.conns or {}) do
+		pcall(function() c:Disconnect() end)
+	end
+	if entry.highlight then pcall(function() entry.highlight:Destroy() end) end
+	if entry.billboard then pcall(function() entry.billboard:Destroy() end) end
+end
+
+local function refreshPlayerESP()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer then
+			if not playerEspState.esp[plr] then
+				addPlayerESP(plr)
+			end
+		end
+	end
+
+	for plr in pairs(playerEspState.esp) do
+		if not plr.Parent then
+			removePlayerESP(plr)
+		end
+	end
+end
+
+local function clearAllPlayerESP()
+	for plr in pairs(playerEspState.esp) do
+		removePlayerESP(plr)
+	end
+end
+
+local function startPlayerEspLoop()
+	if playerEspState.loopRunning then return end
+	playerEspState.loopRunning = true
+
+	task.spawn(function()
+		while playerEspState.enabled do
+			refreshPlayerESP()
+			task.wait(SCAN_INTERVAL)
+		end
+		clearAllPlayerESP()
+		playerEspState.loopRunning = false
+	end)
+end
+
+local function setPlayerEspEnabled(state)
+	playerEspState.enabled = state
+
+	if state then
+		startPlayerEspLoop()
+		setStatus("Player ESP on")
+	else
+		clearAllPlayerESP()
+		setStatus("Player ESP off")
+	end
+end
+
+-- ---------- Patrol ESP UI ----------
 local patrolMainSec = makeSection(patrolPage, "Live Patrol ESP")
 
 makeToggle(patrolMainSec, "Enable Patrol ESP",
@@ -2069,11 +2195,11 @@ makeToggle(patrolMainSec, "Enable Patrol ESP",
 	config.patrolESP or false, function(v)
 		setPatrolEnabled(v)
 		config.patrolESP = v
-		notify("Patrol ESP", v and "Enabled." or "Disabled.",
+		notify("ESP", v and "Patrol ESP enabled." or "Patrol ESP disabled.",
 			v and "success" or "info", 2)
 	end)
 
-local patrolStatusSec = makeSection(patrolPage, "Status")
+local patrolStatusSec = makeSection(patrolPage, "Patrol Status")
 local patrolStatusLbl = makeLabel(patrolStatusSec, "Idle.", P.Sub)
 local patrolCountLbl  = makeLabel(patrolStatusSec, "ESP'd: 0", P.Muted)
 
@@ -2082,19 +2208,19 @@ local patrolActionSec = makeSection(patrolPage, "Actions")
 makeButton(patrolActionSec, "Force Refresh",
 	"Immediately rescan workspace.Patrol", "ghost", function()
 		if not patrolState.enabled then
-			notify("Patrol ESP", "Enable the toggle first.", "warn", 2)
+			notify("ESP", "Enable the Patrol ESP toggle first.", "warn", 2)
 			return
 		end
 		refreshESP()
 		local n = 0
 		for _ in pairs(patrolState.esp) do n += 1 end
-		notify("Patrol ESP", "Rescanned — " .. n .. " ESP'd.", "info", 2)
+		notify("ESP", "Rescanned — " .. n .. " ESP'd.", "info", 2)
 	end)
 
 makeButton(patrolActionSec, "Clear All ESP",
-		"Remove every ESP without disabling the toggle", "ghost", function()
+	"Remove every patrol ESP without disabling the toggle", "ghost", function()
 		clearAllESP()
-		notify("Patrol ESP", "ESP cleared.", "info", 2)
+		notify("ESP", "Patrol ESP cleared.", "info", 2)
 	end)
 
 local patrolInfoSec = makeSection(patrolPage, "Info")
@@ -2104,13 +2230,42 @@ makeParagraph(patrolInfoSec,
 	.. "and live distance. When a model leaves Patrol or is destroyed, its ESP "
 	.. "is removed automatically and the scan keeps running.")
 
+-- ---------- Player ESP UI ----------
+local playerEspSec = makeSection(patrolPage, "Player ESP")
+
+makeToggle(playerEspSec, "Enable Player ESP",
+	"Green highlight + name/distance label on every other player",
+	config.playerESP or false, function(v)
+		setPlayerEspEnabled(v)
+		config.playerESP = v
+		notify("Player ESP", v and "Enabled." or "Disabled.",
+			v and "success" or "info", 2)
+	end)
+
+local playerEspStatusSec = makeSection(patrolPage, "Player Status")
+local playerEspStatusLbl = makeLabel(playerEspStatusSec, "Idle.", P.Sub)
+local playerEspCountLbl  = makeLabel(playerEspStatusSec, "Players ESP'd: 0", P.Muted)
+
+makeButton(playerEspStatusSec, "Clear Player ESP",
+	"Remove every player ESP without disabling the toggle", "ghost", function()
+		clearAllPlayerESP()
+		notify("Player ESP", "Player ESP cleared.", "info", 2)
+	end)
+
+local playerEspInfoSec = makeSection(patrolPage, "Player ESP Info")
+makeParagraph(playerEspInfoSec,
+	"Every player except you gets a green Highlight and a name + live distance "
+	.. "label above their head. Handles respawns automatically. Toggle off to "
+	.. "remove everything.")
+
+-- ---------- Status updater (both ESP types) ----------
 task.spawn(function()
 	while gui.Parent do
-		local count = 0
-		for _ in pairs(patrolState.esp) do count += 1 end
+		local patrolCount = 0
+		for _ in pairs(patrolState.esp) do patrolCount += 1 end
 
 		if patrolState.enabled then
-			patrolStatusLbl.Text = "● Scanning…  •  " .. count .. " in Patrol"
+			patrolStatusLbl.Text = "● Scanning…  •  " .. patrolCount .. " in Patrol"
 			patrolStatusLbl.TextColor3 = P.Accent
 		else
 			patrolStatusLbl.Text = PATROL_PATH
@@ -2119,8 +2274,23 @@ task.spawn(function()
 			patrolStatusLbl.TextColor3 = PATROL_PATH and P.Sub or P.Bad
 		end
 
-		patrolCountLbl.Text = "ESP'd: " .. count
-		patrolCountLbl.TextColor3 = count > 0 and P.Good or P.Muted
+		patrolCountLbl.Text = "ESP'd: " .. patrolCount
+		patrolCountLbl.TextColor3 = patrolCount > 0 and P.Good or P.Muted
+
+		local playerCount = 0
+		for _ in pairs(playerEspState.esp) do playerCount += 1 end
+
+		if playerEspState.enabled then
+			playerEspStatusLbl.Text = "● Scanning players…  •  " .. playerCount .. " ESP'd"
+			playerEspStatusLbl.TextColor3 = P.Accent
+		else
+			playerEspStatusLbl.Text = "Idle."
+			playerEspStatusLbl.TextColor3 = P.Sub
+		end
+
+		playerEspCountLbl.Text = "Players ESP'd: " .. playerCount
+		playerEspCountLbl.TextColor3 = playerCount > 0 and P.Good or P.Muted
+
 		task.wait(0.25)
 	end
 end)
@@ -2322,4 +2492,4 @@ task.delay(0.6, function()
 	doScan()
 end)
 
-print("[Florence Hub] v4.2 loaded (" .. (IS_MOBILE and "mobile" or "desktop") .. ").")
+print("[Florence Hub] v4.5 loaded (" .. (IS_MOBILE and "mobile" or "desktop") .. ").")
