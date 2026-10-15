@@ -1,6 +1,6 @@
 -- ============================================================
---  FLORENCE HUB  |  Aim Assist v3 (Lock-On)
---  Private test build • Mobile-aware • Draggable toggle • M key
+--  FLORENCE HUB  |  Aim Assist v5 (Lock-On)
+--  Private test build • Mobile-aware • Draggable toggle
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -116,15 +116,13 @@ local settings = {
 	LockDistance      = 500,
 	LockGrace         = 0.2,
 	AimKey            = Enum.KeyCode.E,
-	SwitchKey         = Enum.KeyCode.Q,
 	LockKey           = Enum.KeyCode.F,
+	WindowKey         = Enum.KeyCode.M,
 }
 
 -- Runtime state
 local runtime = {
-	keyHeld       = false,
-	switchPending = false,
-	targetIndex   = 1,
+	keyHeld = false,
 }
 
 -- Lock-on state
@@ -377,7 +375,7 @@ new("TextLabel", {
 	Size = UDim2.new(1, -160, 1, 0),
 	Position = UDim2.fromOffset(14, 0),
 	BackgroundTransparency = 1,
-	Text = "🎯  Florence Hub — Aim Assist v3" .. (IS_MOBILE and " • Mobile" or ""),
+	Text = "🎯  Florence Hub — Aim Assist v5" .. (IS_MOBILE and " • Mobile" or ""),
 	TextColor3 = P.Text,
 	Font = Enum.Font.GothamBold,
 	TextSize = fs(12),
@@ -503,7 +501,7 @@ local statusRight = new("TextLabel", {
 	Size = UDim2.new(0.5, -10, 1, 0),
 	Position = UDim2.new(0.5, 0, 0, 0),
 	BackgroundTransparency = 1,
-	Text = "Aim v3  •  " .. (IS_MOBILE and "mobile" or "desktop"),
+	Text = "Aim v5  •  " .. (IS_MOBILE and "mobile" or "desktop"),
 	TextColor3 = P.Muted,
 	Font = Enum.Font.Gotham,
 	TextSize = fs(10),
@@ -1038,11 +1036,11 @@ local homePage = makeTab("home", "🏠", "Home")
 
 local heroSec = makeSection(homePage, "Welcome")
 makeParagraph(heroSec,
-	"Florence Hub — Aim Assist v3 private test build. "
+	"Florence Hub — Aim Assist v5 private test build. "
 	.. "Drag the 🎯 button anywhere, tap it to open/close the window.")
-makeLabel(heroSec, "🎯  Aim Assist — keybinds, wall check, target switching, FOV detection")
+makeLabel(heroSec, "🎯  Aim Assist — keybinds, wall check, FOV detection")
 makeLabel(heroSec, "🔒  Lock-On — sticks to one target until lost or killed")
-makeLabel(heroSec, "⌨️  E = aim • Q = switch • F = lock • M = window")
+makeLabel(heroSec, "⌨️  All keybinds configurable in Settings")
 
 -- ============================================================
 --  TAB 2 — AIM ASSIST
@@ -1066,7 +1064,6 @@ local lockToggleWidget = makeToggle(aimMainSec, "Target Lock",
 	"Lock-On: stick to one target until it dies or breaks line-of-sight",
 	settings.TargetLockEnabled, function(state)
 		settings.TargetLockEnabled = state
-		-- Clear any existing lock when toggled
 		lock.target = nil
 		lock.lockedAt = 0
 		lock.lostAt = nil
@@ -1085,9 +1082,6 @@ else
 	makeKeybind(aimKbSec, "Toggle Aim", settings.AimKey,
 		function(k) settings.AimKey = k end)
 
-	makeKeybind(aimKbSec, "Switch Target", settings.SwitchKey,
-		function(k) settings.SwitchKey = k end)
-
 	makeKeybind(aimKbSec, "Lock-On", settings.LockKey,
 		function(k) settings.LockKey = k end)
 
@@ -1096,8 +1090,7 @@ else
 		settings.HoldMode, function(v) settings.HoldMode = v end)
 
 	makeParagraph(aimKbSec,
-		"E toggles/holds the aim. Q cycles targets. F activates lock-on "
-		.. "mode (grabs best target, sticks until broken).")
+		"E toggles/holds the aim. F toggles lock-on mode.")
 end
 
 -- ----- Parameters -----
@@ -1178,8 +1171,7 @@ end)
 makeParagraph(aimLockSec,
 	"Max Lock Distance drops a lock if the target moves further than this. "
 	.. "Lock Grace holds the lock briefly when line-of-sight or FOV is "
-	.. "momentarily broken (walking behind a pole, edge of circle) before "
-	.. "the lock releases.")
+	.. "momentarily broken before the lock releases.")
 
 -- ----- Status -----
 local aimStatusSec = makeSection(aimPage, "Status", true)
@@ -1194,25 +1186,42 @@ makeParagraph(aimInfoSec,
 	"Aim Assist picks the best target each frame. Lock-On picks one target "
 	.. "and sticks to it — it only releases if the target dies, is destroyed, "
 	.. "goes out of range, or loses line-of-sight for longer than the grace "
-	.. "period. Use the Switch Target key to cycle candidates.")
+	.. "period.")
 
 -- ============================================================
 --  TAB 3 — SETTINGS
 -- ============================================================
 local settingsPage = makeTab("settings", "⚙️", "Settings")
 
-local kbSec = makeSection(settingsPage, "Window Keybind")
+local kbSec = makeSection(settingsPage, "Keybinds")
+
 if IS_MOBILE then
-	makeParagraph(kbSec, "Tap the 🎯 button to toggle the window.")
+	makeParagraph(kbSec,
+		"Keybinds are desktop-only. Tap the 🎯 button to toggle the window.")
 else
-	makeParagraph(kbSec, "Press M to open or close the window.")
+	makeKeybind(kbSec, "Toggle Window", settings.WindowKey, function(k)
+		settings.WindowKey = k
+		notify("Keybind", "Window toggle set to " .. k.Name, "success", 2)
+	end)
+
+	makeKeybind(kbSec, "Toggle Aim", settings.AimKey, function(k)
+		settings.AimKey = k
+	end)
+
+	makeKeybind(kbSec, "Lock-On", settings.LockKey, function(k)
+		settings.LockKey = k
+	end)
+
+	makeParagraph(kbSec,
+		"Click any button to rebind. Press the desired key while it says "
+		.. "\"Press key…\".")
 end
 
 local aboutSec = makeSection(settingsPage, "About")
 makeParagraph(aboutSec,
-	"Florence Hub — Aim Assist v3. Private test build. Adds full lock-on "
-	.. "logic: acquire on toggle, hold across soft failures with a grace "
-	.. "window, auto-release on hard failures (death/destruction).")
+	"Florence Hub — Aim Assist v5. Private test build. Full lock-on logic "
+	.. "with grace window, auto-release on hard failures, and fully "
+	.. "configurable keybinds for aim, lock-on, and window toggle.")
 
 -- ============================================================
 --  FOV CIRCLE + TARGET HIGHLIGHT
@@ -1310,7 +1319,6 @@ end
 -- ============================================================
 --  LOCK-ON LOGIC
 -- ============================================================
--- Hard failures: release immediately
 local function lockHardFail(entry)
 	if not entry then return true end
 	if not entry.part or not entry.part.Parent then return true end
@@ -1319,7 +1327,6 @@ local function lockHardFail(entry)
 	return false
 end
 
--- Soft failures: allow a grace window before releasing
 local function lockSoftFail(entry)
 	if not entry or not entry.part then return true end
 	local dist = (entry.part.Position - Camera.CFrame.Position).Magnitude
@@ -1341,8 +1348,7 @@ end
 
 local function acquireLock(list)
 	if #list == 0 then return nil end
-	local idx = math.clamp(runtime.targetIndex, 1, #list)
-	local entry = list[idx]
+	local entry = list[1]
 	lock.target   = entry
 	lock.lockedAt = tick()
 	lock.lostAt   = nil
@@ -1350,15 +1356,11 @@ local function acquireLock(list)
 	return entry
 end
 
--- Refresh the current lock's live fields from the newest list build.
--- If the locked character is still in the list, use that fresh entry so
--- crosshairDist / worldDist / health values stay current.
 local function refreshLockEntry(list)
 	if not lock.target then return end
 	local char = lock.target.character
 	for _, e in ipairs(list) do
 		if e.character == char then
-			-- Keep the reference but update fields
 			lock.target.crosshairDist = e.crosshairDist
 			lock.target.worldDist     = e.worldDist
 			lock.target.health        = e.health
@@ -1376,17 +1378,16 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 	if gpe or rebindingActive then return end
 	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 
-	if input.KeyCode == settings.AimKey then
+	if input.KeyCode == settings.WindowKey then
+		win.Visible = not win.Visible
+	elseif input.KeyCode == settings.AimKey then
 		if settings.HoldMode then
 			runtime.keyHeld = true
 			setStatus("Aim held", nil)
 		else
 			aimToggleWidget.click()
 		end
-	elseif input.KeyCode == settings.SwitchKey then
-		runtime.switchPending = true
 	elseif input.KeyCode == settings.LockKey then
-		-- Toggle lock-on mode
 		lockToggleWidget.click()
 	end
 end)
@@ -1410,7 +1411,6 @@ RunService.RenderStepped:Connect(function()
 	local aimActive  = isAimActive()
 	local lockActive = settings.TargetLockEnabled
 
-	-- FOV circle
 	local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 	fovCircle.Position = center
 	fovCircle.Radius = settings.FOV
@@ -1419,7 +1419,6 @@ RunService.RenderStepped:Connect(function()
 	aimFovLbl.Text = string.format("FOV: %d  •  Smooth: %.2f",
 		settings.FOV, settings.Smoothness)
 
-	-- Idle state
 	if not aimActive and not lockActive then
 		targetHighlight.Enabled = false
 		aimStatusLbl.Text = "● Idle."
@@ -1432,29 +1431,12 @@ RunService.RenderStepped:Connect(function()
 		return
 	end
 
-	-- Build the list of currently valid targets
 	local list = buildTargetList()
 	aimListLbl.Text = "Valid targets: " .. #list
 
-	-- Handle switch request
-	if runtime.switchPending then
-		runtime.switchPending = false
-		if #list > 0 then
-			runtime.targetIndex = (runtime.targetIndex % #list) + 1
-		end
-		-- If locked, force a release so the next frame re-acquires
-		if lockActive and lock.target then
-			releaseLock("switched")
-		end
-		setStatus("Target switched", nil)
-	end
-
-	-- Decide the active target
 	local activeTarget
 
 	if lockActive then
-		-- --- LOCK-ON MODE ---
-		-- 1. Try to keep the existing lock alive
 		if lock.target then
 			if lockHardFail(lock.target) then
 				releaseLock("target lost")
@@ -1462,29 +1444,24 @@ RunService.RenderStepped:Connect(function()
 				refreshLockEntry(list)
 
 				if lockSoftFail(lock.target) then
-					-- Start the grace timer if it's not running
 					if not lock.lostAt then lock.lostAt = tick() end
 					local elapsed = tick() - lock.lostAt
 					if elapsed > settings.LockGrace then
 						releaseLock("out of sight")
 					else
-						-- Grace: keep aiming at the last known position
 						activeTarget = lock.target
 					end
 				else
-					-- Recovered
 					lock.lostAt = nil
 					activeTarget = lock.target
 				end
 			end
 		end
 
-		-- 2. If still no target, acquire one from the current list
 		if not activeTarget and not lock.target and #list > 0 then
 			activeTarget = acquireLock(list)
 		end
 
-		-- --- Lock status label ---
 		if lock.target then
 			local held = tick() - lock.lockedAt
 			aimLockLbl.Text = string.format("Lock: %s  (%.1fs)",
@@ -1494,21 +1471,14 @@ RunService.RenderStepped:Connect(function()
 			aimLockLbl.Text = "Lock: acquiring…"
 			aimLockLbl.TextColor3 = P.Sub
 		end
-
 	else
-		-- --- REGULAR AIM MODE ---
-		if #list == 0 then
-			runtime.targetIndex = 1
-		else
-			runtime.targetIndex = math.clamp(runtime.targetIndex, 1, #list)
-			activeTarget = list[runtime.targetIndex]
+		if #list > 0 then
+			activeTarget = list[1]
 		end
-
 		aimLockLbl.Text = "Lock: —"
 		aimLockLbl.TextColor3 = P.Muted
 	end
 
-	-- No target this frame
 	if not activeTarget then
 		targetHighlight.Enabled = false
 		aimStatusLbl.Text = "● Searching…"
@@ -1517,11 +1487,9 @@ RunService.RenderStepped:Connect(function()
 		return
 	end
 
-	-- Highlight
 	if settings.HighlightTarget then
 		targetHighlight.Adornee = activeTarget.character
 		targetHighlight.Enabled = true
-		-- Tint differently when locked
 		if lockActive and lock.target then
 			targetHighlight.FillColor      = P.Lock
 			targetHighlight.OutlineColor   = Color3.fromRGB(255, 220, 140)
@@ -1533,7 +1501,6 @@ RunService.RenderStepped:Connect(function()
 		targetHighlight.Enabled = false
 	end
 
-	-- Status
 	if lockActive and lock.target then
 		aimStatusLbl.Text = lock.lostAt and "● Lock (grace)" or "● Locked"
 		aimStatusLbl.TextColor3 = lock.lostAt and P.Warn or P.Lock
@@ -1541,10 +1508,8 @@ RunService.RenderStepped:Connect(function()
 		aimStatusLbl.Text = "● Tracking"
 		aimStatusLbl.TextColor3 = P.Good
 	end
-	aimTargetLbl.Text = string.format("Target: %s  [%d/%d]",
-		activeTarget.player.Name, runtime.targetIndex, math.max(#list, 1))
+	aimTargetLbl.Text = "Target: " .. activeTarget.player.Name
 
-	-- Aim
 	local currentCFrame = Camera.CFrame
 	local desiredCFrame = CFrame.new(currentCFrame.Position, activeTarget.part.Position)
 	Camera.CFrame = currentCFrame:Lerp(desiredCFrame, settings.Smoothness)
@@ -1580,18 +1545,6 @@ do
 end
 
 -- ============================================================
---  WINDOW KEYBIND (M)
--- ============================================================
-if not IS_MOBILE then
-	UserInputService.InputBegan:Connect(function(input, gpe)
-		if gpe or rebindingActive then return end
-		if input.KeyCode == Enum.KeyCode.M then
-			win.Visible = not win.Visible
-		end
-	end)
-end
-
--- ============================================================
 --  MINIMIZE / BOOT
 -- ============================================================
 local minimized = false
@@ -1611,9 +1564,10 @@ setStatus("Ready")
 task.delay(0.4, function()
 	notify("Florence Hub",
 		IS_MOBILE and "Tap 🎯 to toggle. Drag it to move."
-			or "E = aim • Q = switch • F = lock • M = window",
+			or string.format("%s = aim • %s = lock • %s = window",
+				settings.AimKey.Name, settings.LockKey.Name, settings.WindowKey.Name),
 		"success", 4)
 end)
 
-print("[Florence Hub] Aim Assist v3 (Lock-On) loaded (" ..
+print("[Florence Hub] Aim Assist v5 (Lock-On) loaded (" ..
 	(IS_MOBILE and "mobile" or "desktop") .. ").")
