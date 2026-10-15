@@ -1,7 +1,7 @@
 -- ============================================================
---  FLORENCE HUB  |  v4.5  •  Standalone Edition
+--  FLORENCE HUB  |  v4.7  •  Standalone Edition
 --  Mobile-aware • Draggable toggle • M key toggle
---  Auto Claim • ESP (Patrol + Player)
+--  Auto Claim • Scanner (fly TP) • ESP
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -111,6 +111,59 @@ local function getFullPath(inst)
 		end
 	end
 	return table.concat(parts, ".")
+end
+
+-- ============================================================
+--  GLOBAL VELOCITY FLY HELPER
+-- ============================================================
+local FLY_SPEED       = 220   -- studs per second
+local ARRIVE_DISTANCE = 2     -- stop within this many studs
+
+-- Fly the player to a target CFrame using velocity-style stepping.
+-- `isCancelled` is a function returning true if the caller wants to abort.
+local function flyToCFrame(targetCFrame, isCancelled)
+	local char = LocalPlayer.Character
+	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+	local hum  = char and char:FindFirstChildOfClass("Humanoid")
+	if not hrp then return false end
+
+	local wasAnchored = hrp.Anchored
+	hrp.Anchored = true
+	if hum then hum.PlatformStand = true end
+
+	local targetPos = targetCFrame.Position
+	local startTime = tick()
+	local arrived = false
+
+	while true do
+		if isCancelled and isCancelled() then break end
+
+		local fromPos = hrp.Position
+		local delta   = targetPos - fromPos
+		local dist    = delta.Magnitude
+
+		if dist <= ARRIVE_DISTANCE then
+			arrived = true
+			break
+		end
+
+		-- step toward target, capped to avoid overshoot
+		local step = math.min(FLY_SPEED * 0.033, dist)
+		local newPos = fromPos + delta.Unit * step
+
+		-- face the target horizontally
+		local lookAt = Vector3.new(targetPos.X, newPos.Y, targetPos.Z)
+		hrp.CFrame = CFrame.new(newPos, lookAt)
+
+		if tick() - startTime > 8 then break end  -- safety
+		RunService.Heartbeat:Wait()
+	end
+
+	-- snap and restore
+	hrp.CFrame = CFrame.new(targetPos, targetCFrame.LookVector * 5 + targetPos)
+	hrp.Anchored = wasAnchored
+	if hum then hum.PlatformStand = false end
+	return arrived
 end
 
 -- ============================================================
@@ -581,7 +634,7 @@ local statusRight = new("TextLabel", {
 	Size = UDim2.new(0.5, -10, 1, 0),
 	Position = UDim2.new(0.5, 0, 0, 0),
 	BackgroundTransparency = 1,
-	Text = "v4.5  •  " .. (IS_MOBILE and "mobile" or "desktop"),
+	Text = "v4.7  •  " .. (IS_MOBILE and "mobile" or "desktop"),
 	TextColor3 = P.Muted,
 	Font = Enum.Font.Gotham,
 	TextSize = fs(10),
@@ -1112,7 +1165,7 @@ local function makeKeybind(parent, title, default, callback)
 		end
 	end)
 
-return { get = function() return currentKey end }
+	return { get = function() return currentKey end }
 end
 
 local function makeParagraph(parent, text)
@@ -1151,18 +1204,18 @@ local homePage = makeTab("home", "🏠", "Home")
 
 local heroSec = makeSection(homePage, "Welcome")
 makeParagraph(heroSec,
-	"Florence Hub v4.5 — standalone with mobile-aware sizing. "
+	"Florence Hub v4.7 — standalone with mobile-aware sizing. "
 	.. "Drag the 🍬 button anywhere. Tap it to open/close the window. "
 	.. "Press M to toggle.")
-makeLabel(heroSec, "🎁  Auto Claim — instant TP + camera down + fire")
-makeLabel(heroSec, "🍬  Scanner — search Workspace by name")
+makeLabel(heroSec, "🎁  Auto Claim — fly to item at 220 speed + camera down + fire")
+makeLabel(heroSec, "🍬  Scanner — search Workspace + fly TP")
 makeLabel(heroSec, "⚡  Instant Prompt — one-tap ProximityPrompts")
 makeLabel(heroSec, "👁  ESP — live scan + Player ESP")
 makeLabel(heroSec, "🏃  Movement — walkspeed / jumppower / anti-afk")
 makeLabel(heroSec, "⚙️  Settings — keybind + config save/load")
 
 -- ============================================================
---  TAB 2 — AUTO CLAIM  (instant TP + camera down + fire)
+--  TAB 2 — AUTO CLAIM  (velocity fly at 220 speed + camera down + fire)
 -- ============================================================
 local claimPage = makeTab("claim", "🎁", "Auto Claim")
 
@@ -1182,6 +1235,7 @@ local claimState = {
 	claimCount  = 0,
 	itemsSeen   = 0,
 	currentName = "-",
+	isFlying    = false,
 }
 
 local function getSpawnPath()
@@ -1228,18 +1282,22 @@ local function firePromptsIn(model)
 	return count
 end
 
-local function instantTP(model)
+-- Fly to an item at FLY_SPEED, using the shared helper
+local function flyToModel(model)
 	local anchor = getModelAnchor(model)
 	if not anchor then return false end
 
-	local char = LocalPlayer.Character
-	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-	if not hrp then return false end
+	local targetPos = anchor.Position + Vector3.new(0, 0, STAND_OFFSET)
+	local targetCF  = CFrame.new(targetPos, anchor.Position)
 
-	local targetPos = anchor.Position
-	local landPos   = targetPos + Vector3.new(0, 0, STAND_OFFSET)
-	hrp.CFrame = CFrame.new(landPos, targetPos)
-	return true
+	claimState.isFlying = true
+	local cancelled = function()
+		return not claimState.enabled
+			or not stillExists(model, getSpawnPath())
+	end
+	local result = flyToCFrame(targetCF, cancelled)
+	claimState.isFlying = false
+	return result
 end
 
 local function forceCameraLookDown(model)
@@ -1284,7 +1342,7 @@ end
 local function processItem(model)
 	claimState.currentName = model.Name
 
-	instantTP(model)
+	flyToModel(model)
 	task.wait(0.1)
 
 	local char = LocalPlayer.Character
@@ -1393,7 +1451,7 @@ end
 local claimMainSec = makeSection(claimPage, "Auto Claim")
 
 makeToggle(claimMainSec, "Enable Auto Claim",
-	"Instant TP + camera look-down + fire, then wait for the item to disappear",
+	"Fly to each item at " .. FLY_SPEED .. " speed, camera down, then fire prompt",
 	config.autoClaim or false, function(v)
 		setClaimEnabled(v)
 		config.autoClaim = v
@@ -1411,7 +1469,7 @@ local claimInfoSec = makeSection(claimPage, "Info")
 makeParagraph(claimInfoSec,
 	"Live-loops while enabled. For each item found in workspace."
 	.. HALLOWEEN_NAME .. "." .. SPAWN_NAME .. " it: "
-	.. "(1) INSTANTLY teleports to the item, "
+	.. "(1) FLIES to the item at " .. FLY_SPEED .. " studs/sec, "
 	.. "(2) forces the camera to look down at the prompt for "
 	.. CAMERA_HOLD_TIME .. "s, "
 	.. "(3) fires the ProximityPrompt, "
@@ -1420,8 +1478,9 @@ makeParagraph(claimInfoSec,
 task.spawn(function()
 	while gui.Parent do
 		if claimState.enabled then
+			local suffix = claimState.isFlying and "  •  flying…" or ""
 			if claimState.itemsSeen > 0 then
-				claimStatusLbl.Text = "● Claiming…"
+				claimStatusLbl.Text = "● Claiming…" .. suffix
 				claimStatusLbl.TextColor3 = P.Accent
 			else
 				claimStatusLbl.Text = "● Scanning…  waiting for items"
@@ -1555,21 +1614,21 @@ local function highlightInstance(inst)
 	end)
 end
 
-local function teleportTo(inst)
+-- Velocity-based TP for the scanner
+local function flyToInstance(inst)
 	if not inst then return end
 	if not inst:IsA("BasePart") then
 		local part = inst:FindFirstChildWhichIsA("BasePart", true)
 		if part then inst = part else return end
 	end
-	local char = LocalPlayer.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	if hrp then
-		hrp.CFrame = inst.CFrame + Vector3.new(0, 4, 0)
-		notify("Teleported", "Moved to " .. inst.Name, "success", 2)
-	else
-		workspace.CurrentCamera.CFrame =
-			CFrame.new(inst.Position + Vector3.new(0, 8, 12), inst.Position)
-	end
+
+	local targetPos = inst.Position + Vector3.new(0, 4, 0)
+	local targetCF  = CFrame.new(targetPos, inst.Position)
+
+	notify("Scanner", "Flying to " .. inst.Name .. "…", "info", 2)
+	flyToCFrame(targetCF, function()
+		return not gui.Parent
+	end)
 end
 
 local ROW_H = IS_MOBILE and 40 or 44
@@ -1583,7 +1642,7 @@ local function addResultRow(inst, index)
 	}, resultsScroll)
 	corner(6, row)
 
-local chip = new("TextLabel", {
+	local chip = new("TextLabel", {
 		Size = UDim2.fromOffset(22, 22),
 		Position = UDim2.fromOffset(7, (ROW_H - 22) / 2),
 		BackgroundColor3 = P.Accent,
@@ -1638,7 +1697,7 @@ local chip = new("TextLabel", {
 		return b
 	end
 
-	mkBtn("TP",   -118, function() teleportTo(inst) end)
+	mkBtn("TP",   -118, function() flyToInstance(inst) end)
 	mkBtn("HL",   -82,  function() highlightInstance(inst) end)
 	mkBtn("📋",   -46,  function()
 		if setclipboard then
@@ -2492,4 +2551,4 @@ task.delay(0.6, function()
 	doScan()
 end)
 
-print("[Florence Hub] v4.5 loaded (" .. (IS_MOBILE and "mobile" or "desktop") .. ").")
+print("[Florence Hub] v4.7 loaded (" .. (IS_MOBILE and "mobile" or "desktop") .. ").")
