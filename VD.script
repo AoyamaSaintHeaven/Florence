@@ -248,14 +248,11 @@ local CONFIG = {
 	Outline             = Color3.fromRGB(255, 255, 255),
 	FillTransparency    = 0.45,
 	OutlineTransparency = 0,
-	NameTags            = true,
-	TagText             = "⚠️ Killer ⚠️",
-	TagFontSize         = 18,
 }
 
 --=========================  SCAN CORE  ====================================
 
-local tracked    = {}     -- [model] = { highlight, tag, label, scriptName }
+local tracked    = {}     -- [model] = { highlight, scriptName }
 local autoScan   = true
 local espEnabled = true
 
@@ -306,38 +303,14 @@ local function applyESP(model, scriptObj)
 	hl.Enabled             = espEnabled
 	hl.Parent              = model
 
-	local tag, lbl
-	if CONFIG.NameTags then
-		tag = Instance.new("BillboardGui")
-		tag.Name          = "KillerostTag"
-		tag.Adornee       = model
-		tag.Size          = UDim2.new(0, 240, 0, 44)
-		tag.StudsOffsetWorldSpace = Vector3.new(0, 3.5, 0)
-		tag.AlwaysOnTop   = true
-		tag.MaxDistance   = 1000
-		tag.Enabled       = espEnabled
-		tag.Parent        = model
+	-- BillboardGui tag logic completely removed
 
-		lbl = Instance.new("TextLabel")
-		lbl.Size                   = UDim2.new(1, 0, 1, 0)
-		lbl.BackgroundTransparency = 1
-		lbl.Text                   = CONFIG.TagText
-		lbl.TextColor3             = CONFIG.Fill
-		lbl.TextStrokeTransparency = 0
-		lbl.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
-		lbl.Font                   = Enum.Font.GothamBold
-		lbl.TextSize               = CONFIG.TagFontSize
-		lbl.Parent                 = tag
-	end
-
-	-- Store script name directly so the UI doesn't have to re-scan
-	tracked[model] = { highlight = hl, tag = tag, label = lbl, scriptName = scriptObj.Name }
+	tracked[model] = { highlight = hl, scriptName = scriptObj.Name }
 end
 
 local function clearESP()
 	for model, data in pairs(tracked) do
 		if data.highlight then data.highlight:Destroy() end
-		if data.tag       then data.tag:Destroy()       end
 		tracked[model] = nil
 	end
 end
@@ -346,7 +319,6 @@ local function setESPEnabled(state)
 	espEnabled = state
 	for _, data in pairs(tracked) do
 		if data.highlight then data.highlight.Enabled = state end
-		if data.tag       then data.tag.Enabled       = state end
 	end
 end
 
@@ -354,7 +326,6 @@ local function applyColor(color)
 	CONFIG.Fill = color
 	for _, data in pairs(tracked) do
 		if data.highlight then data.highlight.FillColor = color end
-		if data.label     then data.label.TextColor3   = color end
 	end
 end
 
@@ -397,7 +368,6 @@ local function fullScan()
 	for model, data in pairs(tracked) do
 		if not model.Parent or not model:FindFirstChildOfClass("Humanoid") then
 			if data.highlight then data.highlight:Destroy() end
-			if data.tag       then data.tag:Destroy()       end
 			tracked[model] = nil
 		end
 	end
@@ -507,7 +477,7 @@ end
 -- ESP on/off
 Tabs.ScannerTab:Toggle({
 	Title = "ESP Highlight",
-	Desc  = "Show red highlight + ⚠️ Killer ⚠️ tag on flagged models",
+	Desc  = "Show highlight on flagged models",
 	Value = true,
 	Callback = function(state)
 		setESPEnabled(state)
@@ -570,7 +540,7 @@ Tabs.CustomizerTab:Section({
 
 Tabs.CustomizerTab:Colorpicker({
 	Title = "Highlight Color",
-	Desc  = "Fill + ⚠️ Killer ⚠️ tag color",
+	Desc  = "Fill color for the ESP",
 	Default = CONFIG.Fill,
 	Transparency = 0,
 	Callback = function(color)
@@ -642,7 +612,7 @@ task.spawn(function()
 		if autoScan then
 			task.wait(next(tracked) == nil and CONFIG.ScanInterval or CONFIG.ScanInterval * 2)
 			fullScan()
-			refreshResultsList()  -- This keeps the "Detected" list in sync automatically
+			refreshResultsList()  -- Keeps the "Detected" list in sync automatically
 		else
 			task.wait(0.5)
 		end
