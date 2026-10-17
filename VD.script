@@ -115,114 +115,64 @@ local function parseJSON(luau_table, indent, level, visited)
 	local currentIndent = string.rep(" ", level * indent)
 	local nextIndent = string.rep(" ", (level + 1) * indent)
 
-	if luau_table == nil then
-		return "null"
-	end
+	if luau_table == nil then return "null" end
 
 	local dataType = type(luau_table)
 
 	if dataType == "table" then
-		if visited[luau_table] then
-			return '"[Circular Reference]"'
-		end
-
+		if visited[luau_table] then return '"[Circular Reference]"' end
 		visited[luau_table] = true
 
 		local isArray = true
 		local maxIndex = 0
 
 		for k, _ in pairs(luau_table) do
-			if type(k) == "number" and k > maxIndex then
-				maxIndex = k
-			end
-			if type(k) ~= "number" or k <= 0 or math.floor(k) ~= k then
-				isArray = false
-				break
-			end
+			if type(k) == "number" and k > maxIndex then maxIndex = k end
+			if type(k) ~= "number" or k <= 0 or math.floor(k) ~= k then isArray = false break end
 		end
 
 		local count = 0
-		for _ in pairs(luau_table) do
-			count = count + 1
-		end
-		if count ~= maxIndex and isArray then
-			isArray = false
-		end
-
-		if count == 0 then
-			return "{}"
-		end
+		for _ in pairs(luau_table) do count = count + 1 end
+		if count ~= maxIndex and isArray then isArray = false end
+		if count == 0 then return "{}" end
 
 		if isArray then
-			if count == 0 then
-				return "[]"
-			end
-
+			if count == 0 then return "[]" end
 			local result = "[\n"
-
 			for i = 1, maxIndex do
 				result = result .. nextIndent .. parseJSON(luau_table[i], indent, level + 1, visited)
-				if i < maxIndex then
-					result = result .. ","
-				end
+				if i < maxIndex then result = result .. "," end
 				result = result .. "\n"
 			end
-
 			result = result .. currentIndent .. "]"
 			return result
 		else
 			local result = "{\n"
 			local first = true
-
 			local keys = {}
-			for k in pairs(luau_table) do
-				table.insert(keys, k)
-			end
+			for k in pairs(luau_table) do table.insert(keys, k) end
 			table.sort(keys, function(a, b)
-				if type(a) == type(b) then
-					return tostring(a) < tostring(b)
-				else
-					return type(a) < type(b)
-				end
+				if type(a) == type(b) then return tostring(a) < tostring(b)
+				else return type(a) < type(b) end
 			end)
 
 			for _, k in ipairs(keys) do
 				local v = luau_table[k]
-				if not first then
-					result = result .. ",\n"
-				else
-					first = false
-				end
-
-				if type(k) == "string" then
-					result = result .. nextIndent .. '"' .. k .. '": '
-				else
-					result = result .. nextIndent .. '"' .. tostring(k) .. '": '
-				end
-
+				if not first then result = result .. ",\n" else first = false end
+				if type(k) == "string" then result = result .. nextIndent .. '"' .. k .. '": '
+				else result = result .. nextIndent .. '"' .. tostring(k) .. '": ' end
 				result = result .. parseJSON(v, indent, level + 1, visited)
 			end
-
 			result = result .. "\n" .. currentIndent .. "}"
 			return result
 		end
 	elseif dataType == "string" then
-		local escaped = luau_table:gsub("\\", "\\\\")
-		escaped = escaped:gsub('"', '\\"')
-		escaped = escaped:gsub("\n", "\\n")
-		escaped = escaped:gsub("\r", "\\r")
-		escaped = escaped:gsub("\t", "\\t")
-
+		local escaped = luau_table:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "\\r"):gsub("\t", "\\t")
 		return '"' .. escaped .. '"'
-	elseif dataType == "number" then
-		return tostring(luau_table)
-	elseif dataType == "boolean" then
-		return luau_table and "true" or "false"
-	elseif dataType == "function" then
-		return '"function"'
-	else
-		return '"' .. dataType .. '"'
-	end
+	elseif dataType == "number" then return tostring(luau_table)
+	elseif dataType == "boolean" then return luau_table and "true" or "false"
+	elseif dataType == "function" then return '"function"'
+	else return '"' .. dataType .. '"' end
 end
 
 local function tableToClipboard(luau_table, indent)
@@ -245,7 +195,7 @@ local CONFIG = {
 	ScanInterval        = 3,
 	Debounce            = 0.6,
 	Fill                = Color3.fromRGB(255, 45, 45),
-	Outline             = Color3.fromRGB(255, 255, 255),
+	Outline             = Color3.fromRGB(255, 45, 45), -- Now synced with Fill
 	FillTransparency    = 0.45,
 	OutlineTransparency = 0,
 }
@@ -303,8 +253,6 @@ local function applyESP(model, scriptObj)
 	hl.Enabled             = espEnabled
 	hl.Parent              = model
 
-	-- BillboardGui tag logic completely removed
-
 	tracked[model] = { highlight = hl, scriptName = scriptObj.Name }
 end
 
@@ -322,10 +270,15 @@ local function setESPEnabled(state)
 	end
 end
 
+-- Combined function to update both Fill and Outline
 local function applyColor(color)
 	CONFIG.Fill = color
+	CONFIG.Outline = color
 	for _, data in pairs(tracked) do
-		if data.highlight then data.highlight.FillColor = color end
+		if data.highlight then 
+			data.highlight.FillColor = color 
+			data.highlight.OutlineColor = color
+		end
 	end
 end
 
@@ -433,7 +386,6 @@ Tabs.PlayerTab:Toggle({
 
 --=========================  SCANNER TAB  ==================================
 
--- Status paragraph (updates on scan)
 local statusParagraph = Tabs.ScannerTab:Paragraph({
 	Title = "Status",
 	Desc  = "Idle...",
@@ -450,7 +402,6 @@ local function setStatus(text, color)
 	end
 end
 
--- Result list shown as a paragraph that we refresh on each scan
 local resultsParagraph = Tabs.ScannerTab:Paragraph({
 	Title = "Detected",
 	Desc  = "No matches yet.",
@@ -474,7 +425,6 @@ local function refreshResultsList()
 	end
 end
 
--- ESP on/off
 Tabs.ScannerTab:Toggle({
 	Title = "ESP Highlight",
 	Desc  = "Show highlight on flagged models",
@@ -485,7 +435,6 @@ Tabs.ScannerTab:Toggle({
 	end,
 })
 
--- Auto re-scan toggle
 Tabs.ScannerTab:Toggle({
 	Title = "Auto Rescan",
 	Desc  = "Re-scan whenever Workspace changes",
@@ -496,19 +445,15 @@ Tabs.ScannerTab:Toggle({
 	end,
 })
 
--- Manual rescan
 Tabs.ScannerTab:Button({
 	Title = "Rescan Now",
 	Desc  = "Run a full scan immediately",
 	Callback = function()
 		setStatus("Manual scan...", Yellow)
 		task.spawn(function()
-			-- Wait for any ongoing scan to finish
 			while scanning do task.wait(0.1) end
-			
 			local n = fullScan()
 			refreshResultsList()
-			
 			if n > 0 then
 				setStatus(("FOUND %d  •  %s"):format(n, os.date("%H:%M:%S")), Red)
 			else
@@ -518,7 +463,6 @@ Tabs.ScannerTab:Button({
 	end,
 })
 
--- Clear
 Tabs.ScannerTab:Button({
 	Title = "Clear Highlights",
 	Desc  = "Remove all current ESP markers",
@@ -530,22 +474,22 @@ Tabs.ScannerTab:Button({
 })
 
 --=========================  ESP CUSTOMIZER TAB  ===========================
--- Color + Alpha live in the SAME tab now
 
 Tabs.CustomizerTab:Section({
-	Title = "Color",
+	Title = "Colors",
 	TextXAlignment = "Left",
 	TextSize = 17,
 })
 
+-- Single colorpicker for BOTH Fill and Outline
 Tabs.CustomizerTab:Colorpicker({
-	Title = "Highlight Color",
-	Desc  = "Fill color for the ESP",
+	Title = "ESP Color",
+	Desc  = "Changes both Fill and Outline colors",
 	Default = CONFIG.Fill,
 	Transparency = 0,
 	Callback = function(color)
 		applyColor(color)
-		setStatus("Color updated", Green)
+		setStatus("ESP color updated", Green)
 	end,
 })
 
@@ -553,7 +497,7 @@ Tabs.CustomizerTab:Button({
 	Title = "Preset: Red",
 	Callback = function()
 		applyColor(Color3.fromRGB(255, 45, 45))
-		setStatus("Color → Red", Green)
+		setStatus("ESP → Red", Green)
 	end,
 })
 
@@ -561,7 +505,7 @@ Tabs.CustomizerTab:Button({
 	Title = "Preset: Green",
 	Callback = function()
 		applyColor(Color3.fromRGB(45, 220, 90))
-		setStatus("Color → Green", Green)
+		setStatus("ESP → Green", Green)
 	end,
 })
 
@@ -569,7 +513,7 @@ Tabs.CustomizerTab:Button({
 	Title = "Preset: Blue",
 	Callback = function()
 		applyColor(Color3.fromRGB(60, 130, 255))
-		setStatus("Color → Blue", Green)
+		setStatus("ESP → Blue", Green)
 	end,
 })
 
@@ -577,7 +521,7 @@ Tabs.CustomizerTab:Button({
 	Title = "Preset: Pink",
 	Callback = function()
 		applyColor(Color3.fromRGB(255, 90, 200))
-		setStatus("Color → Pink", Green)
+		setStatus("ESP → Pink", Green)
 	end,
 })
 
@@ -606,13 +550,13 @@ Tabs.CustomizerTab:Slider({
 })
 
 --=========================  AUTO UI REFRESH & BOOT  =======================
--- Start the auto-scan loop and ensure the UI refreshes every cycle
+
 task.spawn(function()
 	while true do
 		if autoScan then
 			task.wait(next(tracked) == nil and CONFIG.ScanInterval or CONFIG.ScanInterval * 2)
 			fullScan()
-			refreshResultsList()  -- Keeps the "Detected" list in sync automatically
+			refreshResultsList()
 		else
 			task.wait(0.5)
 		end
