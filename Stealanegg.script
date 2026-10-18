@@ -243,14 +243,27 @@ local function tableToClipboard(luau_table, indent)
 	return jsonString
 end
 
--- Player Section --
-
+-- ============================================================
+-- TABS CREATION (Fixed to prevent overwriting)
+-- ============================================================
 local Tabs = {
     PlayerTab = Window:Tab({
         Title = "Players",
         Icon = "121572094465765",
     }),
+    MiscTab = Window:Tab({
+        Title = "Misc",
+        Icon = "121572094465765",
+    }),
+    HalloweenTab = Window:Tab({
+        Title = "Halloween event",
+        Icon = "121572094465765",
+    }),
 }
+
+-- ============================================================
+-- PLAYER TAB FEATURES
+-- ============================================================
 
 Tabs.PlayerTab:Toggle({
     Title = "Noclip",
@@ -478,136 +491,6 @@ Tabs.PlayerTab:Toggle({
 })
 
 -- ══════════════════════════════════════════════════════════════════
---  DROP-EGG TWEEN  —  tween to safe CFrame when DropHeldEgg appears
--- ══════════════════════════════════════════════════════════════════
-local DropEggTween = {}
-do
-	local TARGET_CFRAME = CFrame.new(-5815.0, -202.5, -7251.5)
-	local SPEED         = 300
-
-	local enabled   = false
-	local isRunning = false
-	local toggleUI
-	local uiSyncing = false
-
-	local function getChar()
-		local char = player.Character
-		if not char then return nil, nil, nil end
-		return char,
-			char:FindFirstChild("HumanoidRootPart"),
-			char:FindFirstChildOfClass("Humanoid")
-	end
-
-	local function moveToTarget()
-		local char, hrp, hum = getChar()
-		if not hrp or not hum then return end
-
-		isRunning = true
-
-		-- Keep character upright & controlled
-		pcall(function()
-			hum.PlatformStand = true
-			hum.AutoRotate    = false
-		end)
-
-		-- Lock camera onto humanoid
-		pcall(function()
-			camera.CameraSubject = hum
-		end)
-
-		-- BodyVelocity toward target
-		local bv = Instance.new("BodyVelocity")
-		bv.Name        = "DropEggTween_BV"
-		bv.MaxForce    = Vector3.new(9e9, 9e9, 9e9)
-		bv.P           = 12505
-		bv.Velocity    = Vector3.zero
-		bv.Parent      = hrp
-
-		local bvConn = RunService.Heartbeat:Connect(function()
-			if not hrp or not hrp.Parent then return end
-			local delta = TARGET_CFRAME.Position - hrp.Position
-			if delta.Magnitude < 2 then
-				bv.Velocity = Vector3.zero
-				return
-			end
-			bv.Velocity = delta.Unit * SPEED
-		end)
-
-		-- Wait until we've arrived (or aborted)
-		while enabled and hrp and hrp.Parent do
-			if (hrp.Position - TARGET_CFRAME.Position).Magnitude <= 3 then
-				break
-			end
-			task.wait(0.05)
-		end
-
-		-- Snap to exact CFrame & clean up
-		if hrp and hrp.Parent then
-			pcall(function()
-				hrp.CFrame = TARGET_CFRAME
-				hrp.AssemblyLinearVelocity  = Vector3.zero
-				hrp.AssemblyAngularVelocity = Vector3.zero
-			end)
-		end
-
-		pcall(function() bvConn:Disconnect() end)
-		pcall(function() bv:Destroy() end)
-
-		if hum and hum.Parent then
-			pcall(function()
-				hum.PlatformStand = false
-				hum.AutoRotate    = true
-			end)
-		end
-
-		isRunning = false
-	end
-
-	-- Watch loop: fires whenever DropHeldEgg becomes active
-	task.spawn(function()
-		while true do
-			task.wait(0.1)
-			if enabled and not isRunning then
-				local gui = playerGui:FindFirstChild("DropHeldEgg")
-				if isGuiActive(gui) then
-					task.spawn(moveToTarget)
-				end
-			end
-		end
-	end)
-
-	DropEggTween.SetEnabled = function(v)
-		v = not not v
-		enabled = v
-
-		if toggleUI and not uiSyncing then
-			uiSyncing = true
-			pcall(function()
-				if toggleUI.Set then toggleUI:Set(enabled)
-				elseif toggleUI.SetValue then toggleUI:SetValue(enabled) end
-			end)
-			uiSyncing = false
-		end
-
-		print("[DropEggTween] enabled = " .. tostring(enabled))
-	end
-
-	DropEggTween.IsEnabled = function() return enabled end
-	DropEggTween.AttachToggle = function(tog) toggleUI = tog end
-end
-
-local dropEggToggle = Tabs.PlayerTab:Toggle({
-	Title = "DropEgg Tween",
-	Desc  = "Tween to safe spot when DropHeldEgg appears (BodyVelocity 300)",
-	Value = false,
-	Callback = function(state)
-		DropEggTween.SetEnabled(state)
-	end,
-})
-
-DropEggTween.AttachToggle(dropEggToggle)
-
--- ══════════════════════════════════════════════════════════════════
 --  FLY  —  Infinite Yield-style flight
 -- ══════════════════════════════════════════════════════════════════
 local Fly = {}
@@ -746,12 +629,327 @@ do
 	end)
 end
 
-local Tabs = {
-    MiscTab = Window:Tab({
-        Title = "Misc",
-        Icon = "121572094465765",
-    }),
-}
+-- ══════════════════════════════════════════════════════════════════
+--  HALLOWEEN EVENT TAB FEATURES
+-- ══════════════════════════════════════════════════════════════════
+
+-- ⭐ HALLOWEEN EGG (Formerly DropEgg Tween)
+local HalloweenEgg = {}
+do
+	local TARGET_CFRAME = CFrame.new(-5815.0, -202.5, -7251.5)
+	local SPEED         = 300
+
+	local enabled   = false
+	local isRunning = false
+	local toggleUI
+	local uiSyncing = false
+
+	local function getChar()
+		local char = player.Character
+		if not char then return nil, nil, nil end
+		return char,
+			char:FindFirstChild("HumanoidRootPart"),
+			char:FindFirstChildOfClass("Humanoid")
+	end
+
+	local function moveToTarget()
+		local char, hrp, hum = getChar()
+		if not hrp or not hum then return end
+
+		isRunning = true
+
+		pcall(function()
+			hum.PlatformStand = true
+			hum.AutoRotate    = false
+		end)
+
+		pcall(function()
+			camera.CameraSubject = hum
+		end)
+
+		local bv = Instance.new("BodyVelocity")
+		bv.Name        = "HalloweenEgg_BV"
+		bv.MaxForce    = Vector3.new(9e9, 9e9, 9e9)
+		bv.P           = 12505
+		bv.Velocity    = Vector3.zero
+		bv.Parent      = hrp
+
+		local bvConn = RunService.Heartbeat:Connect(function()
+			if not hrp or not hrp.Parent then return end
+			local delta = TARGET_CFRAME.Position - hrp.Position
+			if delta.Magnitude < 2 then
+				bv.Velocity = Vector3.zero
+				return
+			end
+			bv.Velocity = delta.Unit * SPEED
+		end)
+
+		while enabled and hrp and hrp.Parent do
+			if (hrp.Position - TARGET_CFRAME.Position).Magnitude <= 3 then
+				break
+			end
+			task.wait(0.05)
+		end
+
+		if hrp and hrp.Parent then
+			pcall(function()
+				hrp.CFrame = TARGET_CFRAME
+				hrp.AssemblyLinearVelocity  = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
+			end)
+		end
+
+		pcall(function() bvConn:Disconnect() end)
+		pcall(function() bv:Destroy() end)
+
+		if hum and hum.Parent then
+			pcall(function()
+				hum.PlatformStand = false
+				hum.AutoRotate    = true
+			end)
+		end
+
+		isRunning = false
+	end
+
+	task.spawn(function()
+		while true do
+			task.wait(0.1)
+			if enabled and not isRunning then
+				local gui = playerGui:FindFirstChild("DropHeldEgg")
+				if isGuiActive(gui) then
+					task.spawn(moveToTarget)
+				end
+			end
+		end
+	end)
+
+	HalloweenEgg.SetEnabled = function(v)
+		v = not not v
+		enabled = v
+
+		if toggleUI and not uiSyncing then
+			uiSyncing = true
+			pcall(function()
+				if toggleUI.Set then toggleUI:Set(enabled)
+				elseif toggleUI.SetValue then toggleUI:SetValue(enabled) end
+			end)
+			uiSyncing = false
+		end
+
+		print("[HalloweenEgg] enabled = " .. tostring(enabled))
+	end
+
+	HalloweenEgg.IsEnabled = function() return enabled end
+	HalloweenEgg.AttachToggle = function(tog) toggleUI = tog end
+end
+
+local halloweenEggToggle = Tabs.HalloweenTab:Toggle({
+	Title = "Halloween Egg",
+	Desc  = "Tween to safe spot when DropHeldEgg appears (BodyVelocity 300)",
+	Value = false,
+	Callback = function(state)
+		HalloweenEgg.SetEnabled(state)
+	end,
+})
+
+HalloweenEgg.AttachToggle(halloweenEggToggle)
+
+-- ⭐ GHOST HUNTER
+local GhostHunter = {}
+do
+	local SPEED            = 300
+	local CONTAINER_NAME   = "TrainGhostVisuals"
+	local PRIORITY         = { "Vengeful Spirit", "Haunted Spirit", "Lost Spirit" }
+	local HOVER_HEIGHT     = 10
+
+	local enabled   = false
+	local toggleUI
+	local uiSyncing = false
+	local bv
+	local savedHum
+
+	local function getHRP()
+		local char = player.Character
+		if not char then return nil, nil end
+		return char:FindFirstChild("HumanoidRootPart"), char:FindFirstChildOfClass("Humanoid")
+	end
+
+	local function getContainer()
+		return workspace:FindFirstChild(CONTAINER_NAME)
+	end
+
+	local function getHoverPos(model)
+		if not model or not model.Parent then return nil end
+		local ok, pos = pcall(function()
+			if model:IsA("Model") then
+				local cf, size = model:GetBoundingBox()
+				return cf.Position + Vector3.new(0, size.Y * 0.5 + HOVER_HEIGHT, 0)
+			elseif model:IsA("BasePart") then
+				return model.Position + Vector3.new(0, model.Size.Y * 0.5 + HOVER_HEIGHT, 0)
+			end
+			return nil
+		end)
+		return ok and pos or nil
+	end
+
+	local function pickTarget()
+		local container = getContainer()
+		if not container then return nil end
+		local hrp = getHRP()
+		local hrpPos = hrp and hrp.Position
+
+		for _, name in ipairs(PRIORITY) do
+			local best, bestDist = nil, math.huge
+			for _, child in ipairs(container:GetChildren()) do
+				if child.Name == name then
+					local ok, cf = pcall(function() return child:GetPivot() end)
+					if ok and cf then
+						local dist = hrpPos and (hrpPos - cf.Position).Magnitude or 0
+						if dist < bestDist then
+							bestDist = dist
+							best = child
+						end
+					end
+				end
+			end
+			if best then return best end
+		end
+		return nil
+	end
+
+	local function ensureBV(hrp)
+		if bv and bv.Parent == hrp then return end
+		if bv then bv:Destroy() end
+		bv = Instance.new("BodyVelocity")
+		bv.Name     = "GhostHunter_BV"
+		bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+		bv.P        = 12505
+		bv.Velocity = Vector3.zero
+		bv.Parent   = hrp
+	end
+
+	local function destroyBV()
+		if bv then bv:Destroy(); bv = nil end
+	end
+
+	local function saveHumanoidState(hum)
+		if savedHum then return end
+		savedHum = {
+			platform   = hum.PlatformStand,
+			walk       = hum.WalkSpeed,
+			autoRotate = hum.AutoRotate,
+		}
+		pcall(function()
+			hum.PlatformStand = true
+			hum.WalkSpeed     = 0
+			hum.AutoRotate    = false
+		end)
+	end
+
+	local function restoreHumanoidState()
+		if not savedHum then return end
+		local _, hum = getHRP()
+		if hum then
+			pcall(function()
+				hum.PlatformStand = savedHum.platform
+				hum.WalkSpeed     = savedHum.walk
+				hum.AutoRotate    = savedHum.autoRotate
+			end)
+		end
+		savedHum = nil
+	end
+
+	local function cleanup()
+		destroyBV()
+		restoreHumanoidState()
+	end
+
+	task.spawn(function()
+		while true do
+			if not enabled then
+				cleanup()
+				task.wait(0.2)
+			else
+				local hrp, hum = getHRP()
+				if not hrp or not hum then
+					cleanup()
+					task.wait(0.2)
+				else
+					saveHumanoidState(hum)
+
+					local target = pickTarget()
+					if not target then
+						destroyBV()
+						task.wait(0.2)
+					else
+						ensureBV(hrp)
+
+						while enabled and target and target.Parent do
+							local hrp2 = getHRP()
+							if not hrp2 then break end
+							if bv and bv.Parent ~= hrp2 then ensureBV(hrp2) end
+
+							local hoverPos = getHoverPos(target)
+							if bv and hoverPos then
+								local delta = hoverPos - hrp2.Position
+								if delta.Magnitude < 0.5 then
+									bv.Velocity = Vector3.zero
+								else
+									local vel = delta * 8
+									if vel.Magnitude > SPEED then
+										vel = vel.Unit * SPEED
+									end
+									bv.Velocity = vel
+								end
+							end
+
+							task.wait(0.05)
+						end
+
+						task.wait(0.1)
+					end
+				end
+			end
+		end
+	end)
+
+	GhostHunter.SetEnabled = function(v)
+		v = not not v
+		enabled = v
+		if not v then cleanup() end
+
+		if toggleUI and not uiSyncing then
+			uiSyncing = true
+			pcall(function()
+				if toggleUI.Set then toggleUI:Set(enabled)
+				elseif toggleUI.SetValue then toggleUI:SetValue(enabled) end
+			end)
+			uiSyncing = false
+		end
+
+		print("[GhostHunter] enabled = " .. tostring(enabled))
+	end
+
+	GhostHunter.IsEnabled = function() return enabled end
+	GhostHunter.AttachToggle = function(tog) toggleUI = tog end
+end
+
+local ghostHunterToggle = Tabs.HalloweenTab:Toggle({
+	Title = "Ghost Hunter",
+	Desc  = "Hover above rarest ghost (Vengeful > Haunted > Lost) · BodyVelocity max 300",
+	Value = false,
+	Callback = function(state)
+		GhostHunter.SetEnabled(state)
+	end,
+})
+
+GhostHunter.AttachToggle(ghostHunterToggle)
+
+
+-- ══════════════════════════════════════════════════════════════════
+--  MISC TAB FEATURES
+-- ══════════════════════════════════════════════════════════════════
 
 local flyToggle = Tabs.MiscTab:Toggle({
     Title = "Fly",
@@ -782,20 +980,6 @@ Tabs.MiscTab:Slider({
 
 --[[
     Humanoid Swap Anti-Death Bypass
-    --------------------------------
-    - Cinoclone ang OldHumanoid, transfer lahat ng children, destroy old, parent clone
-    - Sine-save/restore: JumpPower, JumpHeight, UseJumpPower, EvaluateStateMachine,
-      at lahat ng 16 HumanoidStateType enabled states
-    - LockHealth: MaxHealth/Health = math.huge
-    - BlockDeathState: Dead=false, BreakJointsOnDeath=false, RequiresNeck=false
-    - BindAntiDeath: HealthChanged + Died events
-    - Background loop (0.1s): force-heal + disable Dead state
-    - RefreshControls via PlayerModule
-    - Camera.CameraSubject = NewHumanoid
-    - Double-check pattern after 0.25s
-    - Bound to Player.CharacterAdded + initial task.spawn
-    - Lahat ng operations nasa pcall()
-    - Hindi pinipigilan ang respawn — sine-swap lang ang humanoid pagka-load
 --]]
 
 -- ============================================================
