@@ -478,6 +478,136 @@ Tabs.PlayerTab:Toggle({
 })
 
 -- ══════════════════════════════════════════════════════════════════
+--  DROP-EGG TWEEN  —  tween to safe CFrame when DropHeldEgg appears
+-- ══════════════════════════════════════════════════════════════════
+local DropEggTween = {}
+do
+	local TARGET_CFRAME = CFrame.new(-5815.0, -202.5, -7251.5)
+	local SPEED         = 300
+
+	local enabled   = false
+	local isRunning = false
+	local toggleUI
+	local uiSyncing = false
+
+	local function getChar()
+		local char = player.Character
+		if not char then return nil, nil, nil end
+		return char,
+			char:FindFirstChild("HumanoidRootPart"),
+			char:FindFirstChildOfClass("Humanoid")
+	end
+
+	local function moveToTarget()
+		local char, hrp, hum = getChar()
+		if not hrp or not hum then return end
+
+		isRunning = true
+
+		-- Keep character upright & controlled
+		pcall(function()
+			hum.PlatformStand = true
+			hum.AutoRotate    = false
+		end)
+
+		-- Lock camera onto humanoid
+		pcall(function()
+			camera.CameraSubject = hum
+		end)
+
+		-- BodyVelocity toward target
+		local bv = Instance.new("BodyVelocity")
+		bv.Name        = "DropEggTween_BV"
+		bv.MaxForce    = Vector3.new(9e9, 9e9, 9e9)
+		bv.P           = 12505
+		bv.Velocity    = Vector3.zero
+		bv.Parent      = hrp
+
+		local bvConn = RunService.Heartbeat:Connect(function()
+			if not hrp or not hrp.Parent then return end
+			local delta = TARGET_CFRAME.Position - hrp.Position
+			if delta.Magnitude < 2 then
+				bv.Velocity = Vector3.zero
+				return
+			end
+			bv.Velocity = delta.Unit * SPEED
+		end)
+
+		-- Wait until we've arrived (or aborted)
+		while enabled and hrp and hrp.Parent do
+			if (hrp.Position - TARGET_CFRAME.Position).Magnitude <= 3 then
+				break
+			end
+			task.wait(0.05)
+		end
+
+		-- Snap to exact CFrame & clean up
+		if hrp and hrp.Parent then
+			pcall(function()
+				hrp.CFrame = TARGET_CFRAME
+				hrp.AssemblyLinearVelocity  = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
+			end)
+		end
+
+		pcall(function() bvConn:Disconnect() end)
+		pcall(function() bv:Destroy() end)
+
+		if hum and hum.Parent then
+			pcall(function()
+				hum.PlatformStand = false
+				hum.AutoRotate    = true
+			end)
+		end
+
+		isRunning = false
+	end
+
+	-- Watch loop: fires whenever DropHeldEgg becomes active
+	task.spawn(function()
+		while true do
+			task.wait(0.1)
+			if enabled and not isRunning then
+				local gui = playerGui:FindFirstChild("DropHeldEgg")
+				if isGuiActive(gui) then
+					task.spawn(moveToTarget)
+				end
+			end
+		end
+	end)
+
+	DropEggTween.SetEnabled = function(v)
+		v = not not v
+		enabled = v
+
+		if toggleUI and not uiSyncing then
+			uiSyncing = true
+			pcall(function()
+				if toggleUI.Set then toggleUI:Set(enabled)
+				elseif toggleUI.SetValue then toggleUI:SetValue(enabled) end
+			end)
+			uiSyncing = false
+		end
+
+		print("[DropEggTween] enabled = " .. tostring(enabled))
+	end
+
+	DropEggTween.IsEnabled = function() return enabled end
+	DropEggTween.AttachToggle = function(tog) toggleUI = tog end
+end
+
+local dropEggToggle = Tabs.PlayerTab:Toggle({
+	Title = "DropEgg Tween",
+	Desc  = "Tween to safe spot when DropHeldEgg appears (BodyVelocity 300)",
+	Value = false,
+	Callback = function(state)
+		DropEggTween.SetEnabled(state)
+	end,
+})
+
+DropEggTween.AttachToggle(dropEggToggle)
+
+-- ══════════════════════════════════════════════════════════════════
 --  FLY  —  Infinite Yield-style flight
 -- ══════════════════════════════════════════════════════════════════
 local Fly = {}
