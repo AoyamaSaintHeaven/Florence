@@ -1,8 +1,7 @@
 --[[
     Roblox Piano Auto-Player
     Kanta: River Flows in You (Yiruma)
-    Sheet: virtualpianosheet.com
-    Tempo: 72 BPM (pwedeng baguhin sa slider)
+    Tempo: 60 BPM (pwedeng baguhin sa slider)
 ]]
 
 -- 1. Load GUI Library (Orion)
@@ -23,16 +22,18 @@ local Tab = Window:MakeTab({
 
 local Section = Tab:AddSection({ Name = "Select a Song" })
 
--- 2. Kumpletong Sheet ng "River Flows in You" (72 BPM)
--- Ang [..] ay chord (sabay pindutin), ang - ay pause
-local RIVER_FLOWS_SHEET = "[se]-a-s-a-[sq]-o-s-i---tu[se]-a-s-a-[sq]-o-s-i---tu[se]-asutasqtosqtoi[u8]-i-o-[u8]-[yw]--tr[t6]-0-t-ty[u4]-8-u-ui[o8]-w-t-iu[y5]-9-r-tu[se]-asutasqtosqtoi[ut]-i-o-f-[wd]-ydf[rd]-sa[se]-u-s-sd[qf]-t-f-fg[th]-o-s-gf[wd]-y-sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]-9-w--[se]-asutasqtosqtoi[u8]-i-o-[u8]-[yw]--tr[t6]-0-t-ty[u4]-8-u-ui[o8]-w-t-iu[y5]-9-r-tu[se]-asutasqtosqtoi[ut]-i-o-f-[wd]-ydf[rd]-sa[se]-u-s-sd[qf]-t-f-fg[th]-o-s-gf[wd]-y-sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]-9-w--[se]-a-s-a-[sq]-o-s-i-[wu]-i-o-u-[yw]--tr[t6]-0-t-ty[u4]-8-u-ui[o8]-w-t-iu[y5]-9-r--[t6]-0-s"
-
--- 3. Listahan ng Kanta (pwedeng dagdagan sa hinaharap)
+-- ============================================================
+-- 2. KUMPLETONG SHEET NG "RIVER FLOWS IN YOU"
+-- [..] = chord (sabay pindutin), - = pause
+-- ============================================================
 local Songs = {
-    ["River Flows in You"] = { sheet = RIVER_FLOWS_SHEET, bpm = 72 }
+    ["River Flows in You"] = {
+        bpm = 60,
+        sheet = "[se]-a-s-a-[sq]-o-s-i---tu[se]-a-s-a-[sq]-o-s-i---tu[se]-asutasqtosqtoi[u8]-i-o-[u8]-[yw]--tr[t6]-0-t-ty[u4]-8-u-ui[o8]-w-t-iu[y5]-9-r-tu[se]-asutasqtosqtoi[ut]-i-o-f-[wd]-ydf[rd]-sa[se]-u-s-sd[qf]-t-f-fg[th]-o-s-gf[wd]-y-sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]-9-w--[se]-asutasqtosqtoi[u8]-i-o-[u8]-[yw]--tr[t6]-0-t-ty[u4]-8-u-ui[o8]-w-t-iu[y5]-9-r-tu[se]-asutasqtosqtoi[ut]-i-o-f-[wd]-ydf[rd]-sa[se]-u-s-sd[qf]-t-f-fg[th]-o-s-gf[wd]-y-sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]-9-w--[se]-a-s-a-[sq]-o-s-i-[wu]-i-o-u-[yw]--tr[t6]-0-t-ty[u4]-8-u-ui[o8]-w-t-iu[y5]-9-r--[t6]-0-s"
+    }
 }
 
--- 4. Parser: Ginagawang timestamp array ang sheet
+-- 3. Parser: sheet + BPM -> timestamp array
 local function parseSheet(sheet, bpm)
     local beat = 60 / bpm
     local events = {}
@@ -42,6 +43,7 @@ local function parseSheet(sheet, bpm)
         local c = sheet:sub(i, i)
         if c == "[" then
             local j = sheet:find("]", i)
+            if not j then break end
             local chord = sheet:sub(i + 1, j - 1)
             local keys = {}
             for k = 1, #chord do keys[#keys + 1] = chord:sub(k, k) end
@@ -60,23 +62,28 @@ local function parseSheet(sheet, bpm)
     return events
 end
 
--- 5. Key Press Simulation (para tumunog sa piano game)
+-- 4. Key Press Simulation
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local function pressKey(key)
     local keyCode = key:upper()
-    VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-    task.wait(0.05)
-    VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+        task.wait(0.04)
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    end)
 end
 
--- 6. Play Function (auto-tempo base sa timestamp)
+-- 5. Play Function (auto-tempo base sa timestamp)
 local isPlaying = false
 local TempoMultiplier = 1.0
 
 local function playSong(songName)
     if isPlaying then return end
     local song = Songs[songName]
-    if not song then return end
+    if not song then
+        OrionLib:MakeNotification({Name="Error", Content="Walang nota para sa kantang ito.", Time=3})
+        return
+    end
 
     isPlaying = true
     local events = parseSheet(song.sheet, song.bpm)
@@ -86,8 +93,7 @@ local function playSong(songName)
         for _, e in ipairs(events) do
             if not isPlaying then break end
             local targetTime = startTime + (e.time / TempoMultiplier)
-            local now = os.clock()
-            local delay = targetTime - now
+            local delay = targetTime - os.clock()
             if delay > 0 then task.wait(delay) end
 
             for _, key in ipairs(e.keys) do
@@ -103,13 +109,13 @@ local function playSong(songName)
     end)
 end
 
--- 7. GUI Elements
+-- 6. GUI Controls
 local SongList = {}
 for name, _ in pairs(Songs) do table.insert(SongList, name) end
 
 local SelectedSong = "River Flows in You"
 
-local SongDropdown = Tab:AddDropdown({
+Tab:AddDropdown({
     Name = "Choose a Song",
     Options = SongList,
     Default = "River Flows in You",
@@ -118,6 +124,7 @@ local SongDropdown = Tab:AddDropdown({
     end
 })
 
+-- 🎚️ TEMPO SLIDER (dito mo babaguhin ang bilis)
 Tab:AddSlider({
     Name = "Tempo Multiplier",
     Min = 0.5,
