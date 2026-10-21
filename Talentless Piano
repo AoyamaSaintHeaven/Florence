@@ -1,0 +1,152 @@
+--[[
+    Roblox Piano Auto-Player
+    Kanta: River Flows in You (Yiruma)
+    Sheet: virtualpianosheet.com
+    Tempo: 72 BPM (pwedeng baguhin sa slider)
+]]
+
+-- 1. Load GUI Library (Orion)
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Qanuir/orion-ui/refs/heads/main/source.lua"))()
+
+local Window = OrionLib:MakeWindow({
+    Name = "Piano Auto-Player",
+    HidePremium = false,
+    SaveConfig = true,
+    ConfigFolder = "PianoPlayerConfig"
+})
+
+local Tab = Window:MakeTab({
+    Name = "Songs",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+local Section = Tab:AddSection({ Name = "Select a Song" })
+
+-- 2. Kumpletong Sheet ng "River Flows in You" (72 BPM)
+-- Ang [..] ay chord (sabay pindutin), ang - ay pause
+local RIVER_FLOWS_SHEET = "[se]-a-s-a-[sq]-o-s-i---tu[se]-a-s-a-[sq]-o-s-i---tu[se]-asutasqtosqtoi[u8]-i-o-[u8]-[yw]--tr[t6]-0-t-ty[u4]-8-u-ui[o8]-w-t-iu[y5]-9-r-tu[se]-asutasqtosqtoi[ut]-i-o-f-[wd]-ydf[rd]-sa[se]-u-s-sd[qf]-t-f-fg[th]-o-s-gf[wd]-y-sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]-9-w--[se]-asutasqtosqtoi[u8]-i-o-[u8]-[yw]--tr[t6]-0-t-ty[u4]-8-u-ui[o8]-w-t-iu[y5]-9-r-tu[se]-asutasqtosqtoi[ut]-i-o-f-[wd]-ydf[rd]-sa[se]-u-s-sd[qf]-t-f-fg[th]-o-s-gf[wd]-y-sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--sdsa[se]totsdsa[sq]totsdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]--ssdsa[se]totssdsa[sq]totssdsa[s8]dfg[h0]fds[wa]-9-w--[se]-a-s-a-[sq]-o-s-i-[wu]-i-o-u-[yw]--tr[t6]-0-t-ty[u4]-8-u-ui[o8]-w-t-iu[y5]-9-r--[t6]-0-s"
+
+-- 3. Listahan ng Kanta (pwedeng dagdagan sa hinaharap)
+local Songs = {
+    ["River Flows in You"] = { sheet = RIVER_FLOWS_SHEET, bpm = 72 }
+}
+
+-- 4. Parser: Ginagawang timestamp array ang sheet
+local function parseSheet(sheet, bpm)
+    local beat = 60 / bpm
+    local events = {}
+    local time = 0
+    local i = 1
+    while i <= #sheet do
+        local c = sheet:sub(i, i)
+        if c == "[" then
+            local j = sheet:find("]", i)
+            local chord = sheet:sub(i + 1, j - 1)
+            local keys = {}
+            for k = 1, #chord do keys[#keys + 1] = chord:sub(k, k) end
+            events[#events + 1] = { time = time, keys = keys }
+            time = time + beat
+            i = j + 1
+        elseif c == "-" then
+            time = time + beat
+            i = i + 1
+        else
+            events[#events + 1] = { time = time, keys = { c } }
+            time = time + beat
+            i = i + 1
+        end
+    end
+    return events
+end
+
+-- 5. Key Press Simulation (para tumunog sa piano game)
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local function pressKey(key)
+    local keyCode = key:upper()
+    VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+    task.wait(0.05)
+    VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+end
+
+-- 6. Play Function (auto-tempo base sa timestamp)
+local isPlaying = false
+local TempoMultiplier = 1.0
+
+local function playSong(songName)
+    if isPlaying then return end
+    local song = Songs[songName]
+    if not song then return end
+
+    isPlaying = true
+    local events = parseSheet(song.sheet, song.bpm)
+    local startTime = os.clock()
+
+    task.spawn(function()
+        for _, e in ipairs(events) do
+            if not isPlaying then break end
+            local targetTime = startTime + (e.time / TempoMultiplier)
+            local now = os.clock()
+            local delay = targetTime - now
+            if delay > 0 then task.wait(delay) end
+
+            for _, key in ipairs(e.keys) do
+                pressKey(key)
+            end
+        end
+        isPlaying = false
+        OrionLib:MakeNotification({
+            Name = "Tapos na",
+            Content = "Natapos: " .. songName,
+            Time = 3
+        })
+    end)
+end
+
+-- 7. GUI Elements
+local SongList = {}
+for name, _ in pairs(Songs) do table.insert(SongList, name) end
+
+local SelectedSong = "River Flows in You"
+
+local SongDropdown = Tab:AddDropdown({
+    Name = "Choose a Song",
+    Options = SongList,
+    Default = "River Flows in You",
+    Callback = function(selected)
+        SelectedSong = selected
+    end
+})
+
+Tab:AddSlider({
+    Name = "Tempo Multiplier",
+    Min = 0.5,
+    Max = 2.0,
+    Default = 1.0,
+    Color = Color3.fromRGB(0, 170, 255),
+    Increment = 0.05,
+    ValueName = "x",
+    Callback = function(v)
+        TempoMultiplier = v
+    end
+})
+
+Tab:AddButton({
+    Name = "▶ Play Selected Song",
+    Callback = function()
+        playSong(SelectedSong)
+    end
+})
+
+Tab:AddButton({
+    Name = "⏹ Stop",
+    Callback = function()
+        isPlaying = false
+    end
+})
+
+OrionLib:MakeNotification({
+    Name = "Loaded",
+    Content = "Piano Auto-Player ready!",
+    Time = 5
+})
