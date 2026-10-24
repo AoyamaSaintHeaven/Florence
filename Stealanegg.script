@@ -1287,3 +1287,851 @@ Tabs.MiscTab:Slider({
         end)
     end,
 })
+
+local Tabs = {
+	PredictorTab = Window:Tab({
+		Title = "Egg Predict",
+		Icon = "eye",
+	}),
+	EggAreaTab = Window:Tab({
+		Title = "Egg Area",
+		Icon = "map",
+	}),
+}
+
+
+-- ====================================================================
+-- EGG PREDICT (INVENTORY) TAB — WITH SEARCH BAR
+-- ====================================================================
+
+local TabsRef = (type(Tabs) == "table" and Tabs)
+    or (type(_G.Tabs) == "table" and _G.Tabs)
+    or (type(getgenv) == "function" and type(getgenv().Tabs) == "table" and getgenv().Tabs)
+    or nil
+
+local PredictorTab = TabsRef and (TabsRef.PredictorTab or TabsRef.PredicTab or TabsRef.EggPredict) or nil
+
+if not PredictorTab then return end
+
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local localPlayer       = Players.LocalPlayer
+
+-- ═══ COLORS ═══
+local COLOR_PLACED    = Color3.fromRGB(255, 211, 77)   -- Gold
+local COLOR_INVENTORY = Color3.fromRGB(127, 216, 255)  -- Cyan
+
+-- ═══ HELPERS ═══
+local function tryRequire(inst)
+    if not inst then return nil end
+    local ok, result = pcall(require, inst)
+    return ok and result or nil
+end
+local function findRS(...)
+    local node = ReplicatedStorage
+    for i, name in ipairs({...}) do
+        node = (i == 1) and node:WaitForChild(name, 10) or (node and node:FindFirstChild(name))
+        if not node then return nil end
+    end
+    return node
+end
+
+local Assets     = tryRequire(findRS("Data", "Assets"))
+local EggState   = tryRequire(findRS("Client", "EggState"))
+local Mutations  = tryRequire(findRS("Shared", "Modules", "Mutations"))
+local EggRecords = tryRequire(findRS("Shared", "Util", "EggRecords"))
+
+local networking = ReplicatedStorage:FindFirstChild("Packages")
+networking = networking and networking:FindFirstChild("Networking") or nil
+
+local function formatMoney(n)
+    n = tonumber(n) or 0
+    if n >= 1e12 then return string.format("%.2fT", n/1e12) end
+    if n >= 1e9  then return string.format("%.2fB", n/1e9)  end
+    if n >= 1e6  then return string.format("%.2fM", n/1e6)  end
+    if n >= 1000 then return string.format("%.1fK", n/1000) end
+    return tostring(math.floor(n))
+end
+
+local function formatWeight(n)
+    n = tonumber(n) or 0
+    if n >= 1e6  then return string.format("%.1fM Kg", n/1e6) end
+    if n >= 1000 then return string.format("%.1fK Kg", n/1000) end
+    return string.format("%d Kg", math.floor(n+0.5))
+end
+
+local function scaleFactor(s)
+    s = tonumber(s) or 1
+    if s > 5 then return (s/5)^1.2 * 19.637875755794113 end
+    return s^1.85
+end
+
+local function mutationMult(muts)
+    muts = type(muts) == "table" and muts or {}
+    if Mutations and type(Mutations.EarningsFor) == "function" then
+        local ok, r = pcall(Mutations.EarningsFor, muts)
+        if ok and type(r) == "number" then return r end
+    end
+    return 1
+end
+
+local function getAssetInfo(category)
+    category = tostring(category)
+    local dir = Assets and Assets.Directory
+    local entry = type(dir) == "table" and dir[category] or nil
+    if type(entry) ~= "table" then
+        return { Name = category, EarningRate = 0 }
+    end
+    return {
+        Name        = tostring(entry.DisplayName or category),
+        EarningRate = tonumber(entry.EarningRate) or 0,
+    }
+end
+
+local function getIncome(asset, scale, muts)
+    return asset.EarningRate * scaleFactor(scale) * mutationMult(muts)
+end
+
+local function getRarityColor(petInfo)
+    if not petInfo or not petInfo.Rarity then return Color3.fromRGB(150, 150, 150) end
+    if typeof(petInfo.Rarity.Color) == "Color3" then return petInfo.Rarity.Color end
+    return Color3.fromRGB(150, 150, 150)
+end
+
+local function getRarityName(petInfo)
+    if not petInfo or type(petInfo.Rarity) ~= "table" then return "COMMON" end
+    return string.upper(petInfo.Rarity.DisplayName or petInfo.Rarity._id or "COMMON")
+end
+
+local function getWeight(petName, scale)
+    if not EggRecords then return 0 end
+    local ok, r = pcall(EggRecords.WeightKgForScale, petName, scale)
+    if ok and tonumber(r) then return tonumber(r) end
+    return 0
+end
+
+local function getPetImage(petName)
+    local info = Assets and Assets.Directory and Assets.Directory[petName]
+    if info then
+        return info.Image or info.Icon or info.Thumbnail or info.AssetId or ""
+    end
+    return ""
+end
+
+local function getMutationsString(muts)
+    if not muts or type(muts) ~= "table" or next(muts) == nil then return "None" end
+    local list = {}
+    for k, v in pairs(muts) do
+        if type(k) == "number" then
+            table.insert(list, tostring(v))
+        elseif v == true then
+            table.insert(list, tostring(k))
+        elseif type(v) == "string" then
+            table.insert(list, tostring(v))
+        end
+    end
+    if #list == 0 then return "None" end
+    return table.concat(list, ", ")
+end
+
+local function readInventory()
+    if not EggState or type(EggState.ReadOwnerEggs) ~= "function" then return {} end
+    local ok, data = pcall(EggState.ReadOwnerEggs, localPlayer.UserId)
+    if not ok or type(data) ~= "table" then return {} end
+    
+    local list = {}
+    for uid, rec in pairs(data) do
+        if type(rec) == "table" and rec.AssetCategory then
+            local asset   = getAssetInfo(rec.AssetCategory)
+            local scale   = tonumber(rec.AssetScale) or 1
+            local muts    = type(rec.Mutations) == "table" and rec.Mutations or {}
+            local petInfo = Assets and Assets.Directory and Assets.Directory[rec.AssetCategory] or nil
+            
+            table.insert(list, {
+                Uid          = tostring(uid),
+                Name         = asset.Name,
+                Category     = rec.AssetCategory,
+                RarityName   = getRarityName(petInfo),
+                RarityColor  = getRarityColor(petInfo),
+                Scale        = scale,
+                Income       = getIncome(asset, scale, muts),
+                Weight       = getWeight(rec.AssetCategory, scale),
+                Placed       = rec.Placement ~= nil,
+                PlacementObj = (typeof(rec.Placement) == "Instance") and rec.Placement or nil,
+                Mutations    = muts,
+                Image        = getPetImage(rec.AssetCategory),
+            })
+        end
+    end
+    return list
+end
+
+local function wearEgg(uid)
+    if type(uid) ~= "string" then return false end
+    if EggState and type(EggState.WearEggTool) == "function" then
+        local ok = pcall(EggState.WearEggTool, uid)
+        if ok then return true end
+    end
+    if networking then
+        local rf = networking:FindFirstChild("RF/EggWorld/AskWearTool")
+        if rf and rf:IsA("RemoteFunction") then
+            local ok = pcall(rf.InvokeServer, rf, uid)
+            if ok then return true end
+        end
+    end
+    return false
+end
+
+local function findEggModel(uid)
+    local clientAssets = workspace:FindFirstChild("ClientRenderedAssets")
+    if clientAssets then
+        local exact = clientAssets:FindFirstChild(tostring(localPlayer.UserId) .. "_" .. uid) 
+                   or clientAssets:FindFirstChild(uid)
+        if exact then return exact end
+
+        for _, child in ipairs(clientAssets:GetChildren()) do
+            if string.find(child.Name, uid, 1, true) then
+                return child
+            end
+        end
+    end
+    return workspace:FindFirstChild(uid, true)
+end
+
+local function teleportToPlacedEgg(egg)
+    local model = egg.PlacementObj or findEggModel(egg.Uid)
+    local targetPos = nil
+    if model then
+        if model:IsA("Model") then
+            local primary = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+            if primary then targetPos = primary.Position end
+        elseif model:IsA("BasePart") then
+            targetPos = model.Position
+        end
+    end
+
+    local char = localPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if targetPos and hrp then
+        hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 5, 0))
+        WindUI:Notify({
+            Title = "Teleported: " .. egg.Name,
+            Content = "Mutations: " .. getMutationsString(egg.Mutations),
+            Icon = "map-pin",
+            Duration = 4,
+        })
+    else
+        WindUI:Notify({
+            Title = "Teleport Failed",
+            Content = "Hindi mahanap ang egg model sa workspace.",
+            Icon = "triangle-alert",
+            Duration = 3,
+        })
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- 🎯 SETUP WINDUITAB CONTAINER
+-- ═══════════════════════════════════════════════════════════
+local oldWrapper = PredictorTab.ContainerFrame:FindFirstChild("PredictCustomGridWrapper")
+if oldWrapper then oldWrapper:Destroy() end
+
+local wrapper = Instance.new("Frame")
+wrapper.Name = "PredictCustomGridWrapper"
+wrapper.Size = UDim2.new(1, -20, 1, -20)
+wrapper.Position = UDim2.new(0, 10, 0, 10)
+wrapper.BackgroundTransparency = 1
+wrapper.ClipsDescendants = true
+wrapper.Parent = PredictorTab.ContainerFrame
+
+-- 🎯 SEARCH BAR (Pinalit sa Scan #)
+local searchFrame = Instance.new("Frame")
+searchFrame.Size = UDim2.new(1, 0, 0, 28)
+searchFrame.Position = UDim2.new(0, 0, 0, 0)
+searchFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+searchFrame.BorderSizePixel = 0
+searchFrame.Parent = wrapper
+
+local sCorner = Instance.new("UICorner")
+sCorner.CornerRadius = UDim.new(0, 6)
+sCorner.Parent = searchFrame
+
+local searchIcon = Instance.new("TextLabel")
+searchIcon.Size = UDim2.new(0, 28, 1, 0)
+searchIcon.Position = UDim2.new(0, 4, 0, 0)
+searchIcon.BackgroundTransparency = 1
+searchIcon.Text = "🔍"
+searchIcon.TextColor3 = Color3.fromRGB(150, 150, 160)
+searchIcon.Font = Enum.Font.GothamBold
+searchIcon.TextSize = 14
+searchIcon.Parent = searchFrame
+
+local searchBox = Instance.new("TextBox")
+searchBox.Size = UDim2.new(1, -36, 1, 0)
+searchBox.Position = UDim2.new(0, 32, 0, 0)
+searchBox.BackgroundTransparency = 1
+searchBox.Text = ""
+searchBox.PlaceholderText = "Search pet name..."
+searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 130)
+searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+searchBox.Font = Enum.Font.Gotham
+searchBox.TextSize = 13
+searchBox.TextXAlignment = Enum.TextXAlignment.Left
+searchBox.ClearTextOnFocus = false
+searchBox.Parent = searchFrame
+
+local searchQuery = ""
+searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    searchQuery = string.lower(searchBox.Text)
+    lastHash = "" -- force refresh
+end)
+
+-- Scrolling Frame
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, -34) -- Binawasan ng 34px para magkasya search bar
+scroll.Position = UDim2.new(0, 0, 0, 34)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 4
+scroll.ScrollBarImageColor3 = Color3.fromRGB(77, 255, 122)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+scroll.ClipsDescendants = true
+scroll.Parent = wrapper
+
+local padding = Instance.new("UIPadding")
+padding.PaddingTop = UDim.new(0, 4)
+padding.PaddingLeft = UDim.new(0, 4)
+padding.PaddingRight = UDim.new(0, 8)
+padding.PaddingBottom = UDim.new(0, 6)
+padding.Parent = scroll
+
+local grid = Instance.new("UIGridLayout")
+grid.CellSize = UDim2.new(0, 120, 0, 170)
+grid.CellPadding = UDim2.new(0, 8, 0, 8)
+grid.SortOrder = Enum.SortOrder.LayoutOrder
+grid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+grid.Parent = scroll
+
+-- ═══ CARD CREATOR ═══
+local function createCard(egg, index)
+    local card = Instance.new("Frame")
+    card.Name = egg.Uid
+    card.Size = UDim2.new(0, 120, 0, 170)
+    card.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    card.BorderSizePixel = 0
+    card.LayoutOrder = index
+    card.ClipsDescendants = true
+    card.Parent = scroll
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = card
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = egg.RarityColor
+    stroke.Thickness = 2
+    stroke.Parent = card
+
+    local img = Instance.new("ImageLabel")
+    img.Size = UDim2.new(1, -10, 0.52, 0)
+    img.Position = UDim2.new(0, 5, 0, 5)
+    img.BackgroundTransparency = 1
+    img.Image = egg.Image ~= "" and egg.Image or "rbxassetid://0"
+    img.ScaleType = Enum.ScaleType.Fit
+    img.Parent = card
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, -10, 0, 18)
+    nameLabel.Position = UDim2.new(0, 5, 0.56, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = egg.Name
+    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextScaled = true
+    nameLabel.Parent = card
+
+    local rarityLabel = Instance.new("TextLabel")
+    rarityLabel.Size = UDim2.new(1, -10, 0, 12)
+    rarityLabel.Position = UDim2.new(0, 5, 0.66, 0)
+    rarityLabel.BackgroundTransparency = 1
+    rarityLabel.Text = egg.RarityName
+    rarityLabel.TextColor3 = egg.RarityColor
+    rarityLabel.Font = Enum.Font.GothamBold
+    rarityLabel.TextScaled = true
+    rarityLabel.Parent = card
+
+    local statsLabel = Instance.new("TextLabel")
+    statsLabel.Size = UDim2.new(1, -10, 0, 14)
+    statsLabel.Position = UDim2.new(0, 5, 0.76, 0)
+    statsLabel.BackgroundTransparency = 1
+    statsLabel.Text = string.format("x%.2f | %s", egg.Scale, formatWeight(egg.Weight))
+    statsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statsLabel.Font = Enum.Font.Gotham
+    statsLabel.TextScaled = true
+    statsLabel.Parent = card
+
+    local incomeLabel = Instance.new("TextLabel")
+    incomeLabel.Size = UDim2.new(1, -10, 0, 18)
+    incomeLabel.Position = UDim2.new(0, 5, 0.86, 0)
+    incomeLabel.BackgroundTransparency = 1
+    incomeLabel.Text = "$" .. formatMoney(egg.Income) .. "/s"
+    incomeLabel.TextColor3 = Color3.fromRGB(77, 255, 122)
+    incomeLabel.Font = Enum.Font.GothamBold
+    incomeLabel.TextScaled = true
+    incomeLabel.Parent = card
+
+    local tagFrame = Instance.new("Frame")
+    tagFrame.Size = UDim2.new(0, 60, 0, 18)
+    tagFrame.Position = UDim2.new(1, -65, 0, 5)
+    tagFrame.BackgroundColor3 = egg.Placed and Color3.fromRGB(150, 100, 0) or Color3.fromRGB(0, 100, 150)
+    tagFrame.BackgroundTransparency = 0.2
+    tagFrame.BorderSizePixel = 0
+    tagFrame.Parent = card
+
+    local tagCorner = Instance.new("UICorner")
+    tagCorner.CornerRadius = UDim.new(0, 4)
+    tagCorner.Parent = tagFrame
+
+    local tagText = Instance.new("TextLabel")
+    tagText.Size = UDim2.new(1, 0, 1, 0)
+    tagText.BackgroundTransparency = 1
+    tagText.Text = egg.Placed and "PLACED" or "INVENTORY"
+    tagText.TextColor3 = egg.Placed and COLOR_PLACED or COLOR_INVENTORY
+    tagText.Font = Enum.Font.GothamBold
+    tagText.TextSize = 9
+    tagText.Parent = tagFrame
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = card
+
+    if egg.Placed then
+        btn.MouseButton1Click:Connect(function() teleportToPlacedEgg(egg) end)
+    else
+        btn.MouseButton1Click:Connect(function() wearEgg(egg.Uid) end)
+    end
+    
+    btn.MouseEnter:Connect(function()
+        stroke.Color = Color3.fromRGB(255, 255, 255)
+        stroke.Thickness = 3
+    end)
+    btn.MouseLeave:Connect(function()
+        stroke.Color = egg.RarityColor
+        stroke.Thickness = 2
+    end)
+end
+
+-- ═══ RENDER LOOP ═══
+local lastHash = ""
+
+local function computeHash(eggs)
+    local sorted = {}
+    for _, e in ipairs(eggs) do sorted[#sorted+1] = e end
+    table.sort(sorted, function(a, b) return a.Uid < b.Uid end)
+    local parts = {}
+    for _, e in ipairs(sorted) do
+        parts[#parts+1] = string.format("%s:%s:%s:%s", e.Uid, tostring(e.Scale), tostring(e.Income), tostring(e.Placed))
+    end
+    return table.concat(parts, "|")
+end
+
+local function render()
+    local allEggs = readInventory()
+    table.sort(allEggs, function(a, b) return a.Income > b.Income end)
+
+    -- 🎯 FILTER LOGIC PARA SA SEARCH
+    local filtered = {}
+    for _, egg in ipairs(allEggs) do
+        if searchQuery == "" or string.find(string.lower(egg.Name), searchQuery, 1, true) then
+            table.insert(filtered, egg)
+        end
+    end
+
+    local h = computeHash(filtered) .. "|" .. tostring(#allEggs)
+    if h == lastHash then return end
+    lastHash = h
+
+    for _, child in ipairs(scroll:GetChildren()) do
+        if child:IsA("Frame") or child:IsA("TextLabel") then 
+            child:Destroy() 
+        end
+    end
+
+    if #filtered == 0 then
+        local emptyTxt = Instance.new("TextLabel")
+        emptyTxt.Size = UDim2.new(1, 0, 0, 50)
+        emptyTxt.BackgroundTransparency = 1
+        emptyTxt.Text = searchQuery ~= "" and "No pets match your search" or "Inventory Empty"
+        emptyTxt.TextColor3 = Color3.fromRGB(150, 150, 150)
+        emptyTxt.Font = Enum.Font.GothamBold
+        emptyTxt.TextSize = 16
+        emptyTxt.Parent = scroll
+        return
+    end
+
+    for i, egg in ipairs(filtered) do
+        createCard(egg, i)
+    end
+end
+
+task.spawn(function()
+    pcall(render)
+    while true do
+        task.wait(1) -- Auto refresh every 2 sec
+        pcall(render)
+    end
+end)
+
+
+
+ 
+-- ====================================================================
+-- WINDUITY INTEGRATION — EGG AREA TAB (FIXED SEARCH BAR SIZE)
+-- ====================================================================
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players           = game:GetService("Players")
+local localPlayer       = Players.LocalPlayer
+
+local EggAreaTab = TabsRef and TabsRef.EggAreaTab or nil
+
+if EggAreaTab then
+    print("[EggArea] Injecting Card Viewer with Matched Search Bar Size...")
+
+    -- ═══ MODULES ═══
+    local okState, eggState   = pcall(function() return require(ReplicatedStorage.Client.EggState) end)
+    local okAssets, assets     = pcall(function() return require(ReplicatedStorage.Data.Assets) end)
+    local okRecords, eggRecords = pcall(function() return require(ReplicatedStorage.Shared.Util.EggRecords) end)
+    local okMuts, mutations    = pcall(function() return require(ReplicatedStorage.Shared.Modules.Mutations) end)
+
+    -- ═══ HELPERS ═══
+    local function formatNumber(n)
+        n = tonumber(n) or 0
+        if n >= 1e12 then return string.format("%.2fT", n/1e12) end
+        if n >= 1e9  then return string.format("%.2fB", n/1e9)  end
+        if n >= 1e6  then return string.format("%.2fM", n/1e6)  end
+        if n >= 1e3  then return string.format("%.1fK", n/1e3)  end
+        return tostring(math.floor(n))
+    end
+
+    local function formatWeight(n)
+        n = tonumber(n) or 0
+        if n >= 1e6 then return string.format("%.1fM KG", n / 1e6) end
+        if n >= 1000 then return string.format("%.1fK KG", n / 1000) end
+        return string.format("%d KG", math.floor(n + 0.5))
+    end
+
+    local function getValue(petInfo, scale, muts)
+        if not petInfo then return 0 end
+        local scaleFactor = scale > 5
+            and (scale / 5) ^ 1.2 * 19.637875755794113
+            or  scale ^ 1.85
+        local mutMult = 1
+        if mutations and type(mutations.EarningsFor) == "function" then
+            local ok, result = pcall(mutations.EarningsFor, muts or {})
+            if ok and type(result) == "number" then mutMult = result end
+        end
+        return (petInfo.EarningRate or 0) * scaleFactor * mutMult
+    end
+
+    local function getRarityColor(petInfo)
+        if not petInfo or not petInfo.Rarity then return Color3.fromRGB(255, 255, 255) end
+        if typeof(petInfo.Rarity.Color) == "Color3" then return petInfo.Rarity.Color end
+        return Color3.fromRGB(255, 255, 255)
+    end
+
+    local function getRarityName(petInfo)
+        if not petInfo or type(petInfo.Rarity) ~= "table" then return "COMMON" end
+        return string.upper(petInfo.Rarity.DisplayName or petInfo.Rarity._id or "COMMON")
+    end
+
+    local function getPetImage(petInfo)
+        if not petInfo then return "" end
+        return petInfo.Image or petInfo.Icon or petInfo.Thumbnail or petInfo.AssetId or ""
+    end
+
+    local function teleportTo(cframe)
+        if typeof(cframe) ~= "CFrame" then return end
+        local char = localPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        pcall(function() hrp.CFrame = cframe + Vector3.new(0, 5, 0) end)
+    end
+
+    -- ═══ SETUP WINDUITAB CONTAINER ═══
+    local oldWrapper = EggAreaTab.ContainerFrame:FindFirstChild("EggAreaCustomWrapper")
+    if oldWrapper then oldWrapper:Destroy() end
+
+    local wrapper = Instance.new("Frame")
+    wrapper.Name = "EggAreaCustomWrapper"
+    wrapper.Size = UDim2.new(1, -20, 1, -20)
+    wrapper.Position = UDim2.new(0, 10, 0, 10)
+    wrapper.BackgroundTransparency = 1
+    wrapper.ClipsDescendants = true
+    wrapper.Parent = EggAreaTab.ContainerFrame
+
+-- 🎯 SEARCH BAR (Pinalit sa Scan #)
+local searchFrame = Instance.new("Frame")
+searchFrame.Size = UDim2.new(1, 0, 0, 28)
+searchFrame.Position = UDim2.new(0, 0, 0, 0)
+searchFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+searchFrame.BorderSizePixel = 0
+searchFrame.Parent = wrapper
+
+local sCorner = Instance.new("UICorner")
+sCorner.CornerRadius = UDim.new(0, 6)
+sCorner.Parent = searchFrame
+
+local searchIcon = Instance.new("TextLabel")
+searchIcon.Size = UDim2.new(0, 28, 1, 0)
+searchIcon.Position = UDim2.new(0, 4, 0, 0)
+searchIcon.BackgroundTransparency = 1
+searchIcon.Text = "🔍"
+searchIcon.TextColor3 = Color3.fromRGB(150, 150, 160)
+searchIcon.Font = Enum.Font.GothamBold
+searchIcon.TextSize = 14
+searchIcon.Parent = searchFrame
+
+local searchBox = Instance.new("TextBox")
+searchBox.Size = UDim2.new(1, -36, 1, 0)
+searchBox.Position = UDim2.new(0, 32, 0, 0)
+searchBox.BackgroundTransparency = 1
+searchBox.Text = ""
+searchBox.PlaceholderText = "Search pet name..."
+searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 130)
+searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+searchBox.Font = Enum.Font.Gotham
+searchBox.TextSize = 13
+searchBox.TextXAlignment = Enum.TextXAlignment.Left
+searchBox.ClearTextOnFocus = false
+searchBox.Parent = searchFrame
+
+    local searchQuery = ""
+
+-- Scrolling Frame
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, -34) -- Binawasan ng 34px para magkasya search bar
+scroll.Position = UDim2.new(0, 0, 0, 34)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 4
+scroll.ScrollBarImageColor3 = Color3.fromRGB(77, 255, 122)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+scroll.ClipsDescendants = true
+scroll.Parent = wrapper
+
+local padding = Instance.new("UIPadding")
+padding.PaddingTop = UDim.new(0, 4)
+padding.PaddingLeft = UDim.new(0, 4)
+padding.PaddingRight = UDim.new(0, 8)
+padding.PaddingBottom = UDim.new(0, 6)
+padding.Parent = scroll
+
+local grid = Instance.new("UIGridLayout")
+grid.CellSize = UDim2.new(0, 120, 0, 170)
+grid.CellPadding = UDim2.new(0, 8, 0, 8)
+grid.SortOrder = Enum.SortOrder.LayoutOrder
+grid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+grid.Parent = scroll
+
+-- ═══ ROTATING BACKGROUND ENGINE ═══
+local RunService = game:GetService("RunService")
+local rotatingImages = {}
+local ROTATION_SPEED = 45 -- degrees per second (lakasan/mahina)
+
+RunService.Heartbeat:Connect(function(dt)
+    for i = #rotatingImages, 1, -1 do
+        local img = rotatingImages[i]
+        if img and img.Parent then
+            img.Rotation = (img.Rotation + ROTATION_SPEED * dt) % 360
+        else
+            table.remove(rotatingImages, i)
+        end
+    end
+end)
+
+
+
+
+
+
+    -- ═══ RENDER FUNCTION ═══
+    local function updateList()
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextLabel") then
+                child:Destroy()
+            end
+        end
+
+        local allEggs = {}
+        if okState and eggState then
+            local ok, result = pcall(eggState.ReadFieldEggs)
+            if ok and type(result) == "table" and type(result.Records) == "table" then
+                for _, record in pairs(result.Records) do
+                    if type(record) == "table" and record.AssetCategory then
+                        local petName = record.AssetCategory
+                        local petInfo = assets and assets.Directory and assets.Directory[petName] or nil
+                        local displayName = petInfo and (petInfo.DisplayName or petName) or petName
+                        local scale = tonumber(record.AssetScale) or 1
+
+                        local kg = 0
+                        if okRecords and eggRecords and type(eggRecords.WeightKgForScale) == "function" then
+                            local okKg, resKg = pcall(eggRecords.WeightKgForScale, petName, scale)
+                            if okKg and tonumber(resKg) then kg = tonumber(resKg) end
+                        end
+
+                        if searchQuery == "" or string.find(string.lower(displayName), searchQuery, 1, true) then
+                            table.insert(allEggs, {
+                                Name         = displayName,
+                                RarityName   = getRarityName(petInfo),
+                                RarityColor  = getRarityColor(petInfo),
+                                Scale        = scale,
+                                Income       = getValue(petInfo, scale, record.Mutations),
+                                Weight       = kg,
+                                BottomCFrame = record.BottomCFrame,
+                                Image        = getPetImage(petInfo),
+                            })
+                        end
+                    end
+                end
+            end
+        end
+
+        table.sort(allEggs, function(a, b) return a.Income > b.Income end)
+
+        if #allEggs == 0 then
+            local empty = Instance.new("TextLabel")
+            empty.Size = UDim2.new(1, 0, 0, 40)
+            empty.BackgroundTransparency = 1
+            empty.Text = searchQuery ~= "" and "No eggs match search" or "No eggs in area"
+            empty.TextColor3 = Color3.fromRGB(150, 150, 150)
+            empty.Font = Enum.Font.GothamBold
+            empty.TextSize = 13
+            empty.Parent = scroll
+        else
+            for i, egg in ipairs(allEggs) do
+
+
+local card = Instance.new("Frame")
+card.Size = UDim2.new(0, 120, 0, 170)
+card.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+card.BorderSizePixel = 0
+card.LayoutOrder = i
+card.ClipsDescendants = true   -- 🔑 para di lumabas yung rotating image sa corners
+card.Parent = scroll
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = card
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = egg.RarityColor
+stroke.Thickness = 2
+stroke.Parent = card
+
+-- 🖼️ ROTATING BACKGROUND IMAGE
+local bgImage = Instance.new("ImageLabel")
+bgImage.Size = UDim2.new(1.5, 0, 1.5, 0)          -- mas malaki para laging sakop ang card
+bgImage.Position = UDim2.new(-0.25, 0, -0.25, 0)  -- i-center
+bgImage.BackgroundTransparency = 1
+bgImage.Image = "rbxassetid://135083906498742"
+bgImage.ImageTransparency = 0.5                   -- 0 = full visible, 1 = invisible
+bgImage.ScaleType = Enum.ScaleType.Crop
+bgImage.ZIndex = 0                                -- nasa likod
+bgImage.Parent = card
+table.insert(rotatingImages, bgImage)
+
+
+
+
+                local img = Instance.new("ImageLabel")
+                img.ZIndex = 2
+                img.Size = UDim2.new(1, -10, 0.52, 0)
+                img.Position = UDim2.new(0, 5, 0, 5)
+                img.BackgroundTransparency = 1
+                img.Image = egg.Image ~= "" and egg.Image or "rbxassetid://0"
+                img.ScaleType = Enum.ScaleType.Fit
+                img.Parent = card
+
+                local nameLabel = Instance.new("TextLabel")
+                nameLabel.ZIndex = 2
+                nameLabel.Size = UDim2.new(1, -10, 0, 18)
+                nameLabel.Position = UDim2.new(0, 5, 0.56, 0)
+                nameLabel.BackgroundTransparency = 1
+                nameLabel.Text = egg.Name
+                nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                nameLabel.Font = Enum.Font.GothamBold
+                nameLabel.TextScaled = true
+                nameLabel.Parent = card
+
+                local rarityLabel = Instance.new("TextLabel")
+                rarityLabel.ZIndex = 2
+                rarityLabel.Size = UDim2.new(1, -10, 0, 12)
+                rarityLabel.Position = UDim2.new(0, 5, 0.66, 0)
+                rarityLabel.BackgroundTransparency = 1
+                rarityLabel.Text = egg.RarityName
+                rarityLabel.TextColor3 = egg.RarityColor
+                rarityLabel.Font = Enum.Font.GothamBold
+                rarityLabel.TextScaled = true
+                rarityLabel.Parent = card
+
+                local statsLabel = Instance.new("TextLabel")
+                statsLabel.ZIndex = 2
+                statsLabel.Size = UDim2.new(1, -10, 0, 14)
+                statsLabel.Position = UDim2.new(0, 5, 0.76, 0)
+                statsLabel.BackgroundTransparency = 1
+                statsLabel.Text = string.format("x%.2f | %s", egg.Scale, formatWeight(egg.Weight))
+                statsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+                statsLabel.Font = Enum.Font.Gotham
+                statsLabel.TextScaled = true
+                statsLabel.Parent = card
+
+                local incomeLabel = Instance.new("TextLabel")
+                incomeLabel.ZIndex = 2
+                incomeLabel.Size = UDim2.new(1, -10, 0, 18)
+                incomeLabel.Position = UDim2.new(0, 5, 0.86, 0)
+                incomeLabel.BackgroundTransparency = 1
+                incomeLabel.Text = "$" .. formatNumber(egg.Income) .. "/s"
+                incomeLabel.TextColor3 = Color3.fromRGB(77, 255, 122)
+                incomeLabel.Font = Enum.Font.GothamBold
+                incomeLabel.TextScaled = true
+                incomeLabel.Parent = card
+
+                local btn = Instance.new("TextButton")
+                btn.ZIndex = 2
+                btn.Size = UDim2.new(1, 0, 1, 0)
+                btn.BackgroundTransparency = 1
+                btn.Text = ""
+                btn.Parent = card
+                btn.MouseButton1Click:Connect(function()
+                    teleportTo(egg.BottomCFrame)
+                end)
+            end
+        end
+    end
+
+    -- Live Search Listener
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        searchQuery = string.lower(searchBox.Text or "")
+        updateList()
+    end)
+
+    -- Background Auto Refresh
+    task.spawn(function()
+        while wrapper.Parent do
+            updateList()
+            task.wait(2)
+        end
+    end)
+
+    print("[EggArea] WindUI Tab Cards successfully loaded with matched search bar!")
+else
+    warn("[EggArea] TabsRef.EggAreaTab not found!")
+end
