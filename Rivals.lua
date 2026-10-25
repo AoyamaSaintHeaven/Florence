@@ -1040,6 +1040,7 @@ makeParagraph(heroSec,
 	.. "Drag the 🎯 button anywhere, tap it to open/close the window.")
 makeLabel(heroSec, "🎯  Aim Assist — keybinds, wall check, FOV detection")
 makeLabel(heroSec, "🔒  Lock-On — sticks to one target until lost or killed")
+makeLabel(heroSec, "👁️  ESP — highlight every player with distance labels")
 makeLabel(heroSec, "⌨️  All keybinds configurable in Settings")
 
 -- ============================================================
@@ -1224,6 +1225,50 @@ makeParagraph(aboutSec,
 	.. "configurable keybinds for aim, lock-on, and window toggle.")
 
 -- ============================================================
+--  TAB 4 — ESP
+-- ============================================================
+local espPage = makeTab("esp", "👁️", "ESP")
+
+local espMainSec = makeSection(espPage, "Main")
+
+local espToggleWidget = makeToggle(espMainSec, "ESP",
+	"Highlight every player and show distance",
+	false, function(state)
+		esp.enabled = state
+		if state then
+			startESP()
+			notify("ESP", "Enabled.", "success", 2)
+			setStatus("ESP on")
+		else
+			stopESP()
+			notify("ESP", "Disabled.", "info", 2)
+			setStatus("ESP off", "warn")
+		end
+	end)
+
+makeToggle(espMainSec, "Show Distance",
+	"Display studs distance under the highlight",
+	true, function(v)
+		esp.showDist = v
+	end)
+
+local espParamsSec = makeSection(espPage, "Parameters", true)
+
+makeSlider(espParamsSec, "Max Distance", 50, 5000, esp.maxDist, function(v)
+	esp.maxDist = v
+end)
+
+makeParagraph(espParamsSec,
+	"Players beyond Max Distance are still highlighted, but their distance "
+	.. "label is hidden to keep the screen clean.")
+
+local espInfoSec = makeSection(espPage, "Info", true)
+makeParagraph(espInfoSec,
+	"ESP adds a Highlight instance per player and a BillboardGui distance "
+	.. "label that updates every frame. It automatically reattaches on "
+	.. "respawn and cleans up when a player leaves.")
+
+-- ============================================================
 --  FOV CIRCLE + TARGET HIGHLIGHT
 -- ============================================================
 local fovCircle = Drawing.new("Circle")
@@ -1244,6 +1289,174 @@ targetHighlight.OutlineTransparency = 0
 targetHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 targetHighlight.Enabled = false
 targetHighlight.Parent = gui
+
+-- ============================================================
+--  ESP SYSTEM
+-- ============================================================
+local esp = {
+	enabled   = false,
+	showDist  = true,
+	maxDist   = 1000,
+	boxColor  = Color3.fromRGB(120, 90, 255),
+	distColor = Color3.fromRGB(242, 242, 248),
+	tracked   = {},  -- [player] = { highlight = Highlight, billboard = BillboardGui, label = TextLabel }
+}
+
+local function clearESPForPlayer(player)
+	local entry = esp.tracked[player]
+	if not entry then return end
+	pcall(function() if entry.highlight then entry.highlight:Destroy() end end)
+	pcall(function() if entry.billboard and entry.billboard.Parent then entry.billboard:Destroy() end end)
+	esp.tracked[player] = nil
+end
+
+local function clearAllESP()
+	for player in pairs(esp.tracked) do
+		clearESPForPlayer(player)
+	end
+	esp.tracked = {}
+end
+
+local function setupESPForPlayer(player)
+	if player == LocalPlayer then return end
+	if esp.tracked[player] then return end
+
+	local entry = { highlight = nil, billboard = nil, label = nil }
+
+	local hl = Instance.new("Highlight")
+	hl.Name = "FlorenceESP"
+	hl.FillColor = esp.boxColor
+	hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+	hl.FillTransparency = 0.65
+	hl.OutlineTransparency = 0
+	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.Adornee = player.Character
+	hl.Parent = gui
+	entry.highlight = hl
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "FlorenceESPDist"
+	billboard.Size = UDim2.fromOffset(200, 20)
+	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.AlwaysOnTop = true
+	billboard.MaxDistance = 500
+	billboard.Adornee = player.Character and player.Character:FindFirstChild("Head")
+	billboard.Parent = gui
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Text = ""
+	label.TextColor3 = esp.distColor
+	label.TextStrokeTransparency = 0.3
+	label.TextStrokeColor3 = Color3.new(0, 0, 0)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 13
+	label.Parent = billboard
+
+	entry.billboard = billboard
+	entry.label = label
+
+	esp.tracked[player] = entry
+
+	-- attach to current character if present
+	if player.Character then
+		hl.Adornee = player.Character
+		billboard.Adornee = player.Character:FindFirstChild("Head")
+	end
+end
+
+local function onESPCharacterAdded(player, char)
+	local entry = esp.tracked[player]
+	if not entry then return end
+	task.wait(0.1)
+	if entry.highlight then entry.highlight.Adornee = char end
+	if entry.billboard then
+		local head = char:FindFirstChild("Head") or char:WaitForChild("Head", 3)
+		entry.billboard.Adornee = head
+	end
+end
+
+local function startESP()
+	for _, player in ipairs(Players:GetPlayers()) do
+		setupESPForPlayer(player)
+	end
+	esp.connectionAdded = Players.PlayerAdded:Connect(function(player)
+		player.CharacterAdded:Connect(function(char)
+			if esp.enabled then
+				setupESPForPlayer(player)
+				onESPCharacterAdded(player, char)
+			end
+		end)
+		if esp.enabled then setupESPForPlayer(player) end
+	end)
+end
+
+local function stopESP()
+	clearAllESP()
+	if esp.connectionAdded then
+		pcall(function() esp.connectionAdded:Disconnect() end)
+		esp.connectionAdded = nil
+	end
+end
+
+-- Global per-player CharacterAdded handlers so ESP follows respawns
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(char)
+		if not esp.enabled then return end
+		setupESPForPlayer(player)
+		onESPCharacterAdded(player, char)
+	end)
+end)
+Players.PlayerRemoving:Connect(function(player)
+	clearESPForPlayer(player)
+end)
+
+local function updateESP()
+	if not esp.enabled then return end
+
+	local camPos = Camera.CFrame.Position
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player == LocalPlayer then continue end
+		local char = player.Character
+		if not char then continue end
+
+		local entry = esp.tracked[player]
+		if not entry then
+			setupESPForPlayer(player)
+			entry = esp.tracked[player]
+		end
+		if not entry then continue end
+
+		local head = char:FindFirstChild("Head")
+		local root = char:FindFirstChild("HumanoidRootPart") or head
+		local humanoid = char:FindFirstChildOfClass("Humanoid")
+
+		if entry.highlight then
+			entry.highlight.Adornee = char
+			entry.highlight.Enabled = humanoid and humanoid.Health > 0 or true
+		end
+
+		if entry.billboard then
+			entry.billboard.Adornee = head
+
+			if esp.showDist and root then
+				local dist = (root.Position - camPos).Magnitude
+				if dist <= esp.maxDist then
+					entry.label.Text = string.format("[%d studs]", math.floor(dist))
+					entry.label.Visible = true
+				else
+					entry.label.Text = ""
+					entry.label.Visible = false
+				end
+			else
+				entry.label.Text = ""
+				entry.label.Visible = false
+			end
+		end
+	end
+end
 
 -- ============================================================
 --  TARGETING HELPERS
@@ -1408,6 +1621,9 @@ local function isAimActive()
 end
 
 RunService.RenderStepped:Connect(function()
+	-- ESP updates independently of aim state
+	updateESP()
+
 	local aimActive  = isAimActive()
 	local lockActive = settings.TargetLockEnabled
 
@@ -1569,5 +1785,5 @@ task.delay(0.4, function()
 		"success", 4)
 end)
 
-print("[Florence Hub] Aim Assist v5 (Lock-On) loaded (" ..
+print("[Florence Hub] Aim Assist v5 (Lock-On) + ESP loaded (" ..
 	(IS_MOBILE and "mobile" or "desktop") .. ").")
