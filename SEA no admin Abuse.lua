@@ -1014,7 +1014,7 @@ do
 		local GUI_NAME         = "PotentEggReport"
 		local CARD_W, CARD_H   = 120, 170
 		local MAX_CARDS        = 120   -- every card is a handful of GUI objects, keep this modest
-		local FLIGHT_SPEED     = 300
+		local FLIGHT_SPEED     = 280
 		local REFRESH_INTERVAL = 2
 		local DROP_POS         = Vector3.new(527.4, 71.7, -357.8)
 		local ROTATION_SPEED   = 45    -- degrees per second
