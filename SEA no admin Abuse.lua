@@ -1204,8 +1204,10 @@ do
 			setStatus(msg, 6)
 		end
 
+		-- Keep flight logic active while the WindUI window is minimized.
+		-- Only a full script/UI shutdown should invalidate an active flight.
 		local function windowActive()
-			return not app.destroyed and app.windowOpen == true
+			return not app.destroyed
 		end
 
 		-- shows "Flying…" / "Dropping…" on whichever card currently represents the active egg
@@ -1759,10 +1761,9 @@ do
 		app.shutdown = shutdown
 
 		function app.setWindowOpen(open)
+			-- This callback also fires when the yellow title-bar button minimizes
+			-- the GUI. Do not cancel movement just because the window is hidden.
 			app.windowOpen = open and true or false
-			if not app.windowOpen then
-				cancelActiveFlight() -- stop in place; flying again later works normally
-			end
 		end
 
 		-- ═══ SETUP: builds the card viewer inside the tab's ContainerFrame ═══
