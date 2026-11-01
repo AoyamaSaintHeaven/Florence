@@ -1,0 +1,2137 @@
+local RunService = game:GetService("RunService")
+--[[
+
+    WindUI Example (wip)
+    
+]]
+
+local cloneref = (cloneref or clonereference or function(instance)
+	return instance
+end)
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+local HttpService = cloneref(game:GetService("HttpService"))
+
+local WindUI
+
+do
+	local ok, result = pcall(function()
+		return require("./src/Init")
+	end)
+
+	if ok then
+		WindUI = result
+	else
+		if cloneref(game:GetService("RunService")):IsStudio() then
+			WindUI = require(cloneref(ReplicatedStorage:WaitForChild("WindUI"):WaitForChild("Init")))
+		else
+			WindUI =
+				loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+		end
+	end
+end
+
+--[[
+
+WindUI.Creator.AddIcons("solar", {
+    ["CheckSquareBold"] = "rbxassetid://132438947521974",
+    ["CursorSquareBold"] = "rbxassetid://120306472146156",
+    ["FileTextBold"] = "rbxassetid://89294979831077",
+    ["FolderWithFilesBold"] = "rbxassetid://74631950400584",
+    ["HamburgerMenuBold"] = "rbxassetid://134384554225463",
+    ["Home2Bold"] = "rbxassetid://92190299966310",
+    ["InfoSquareBold"] = "rbxassetid://119096461016615",
+    ["PasswordMinimalisticInputBold"] = "rbxassetid://109919668957167",
+    ["SolarSquareTransferHorizontalBold"] = "rbxassetid://125444491429160",
+})--]]
+
+function createPopup()
+	return WindUI:Popup({
+		Title = "Florence",
+		Icon = "rbxassetid://79268589053692",
+		Content = "Hello!",
+		Buttons = {
+			{
+				Title = "Hahaha",
+				Icon = "rbxassetid://79268589053692",
+				Variant = "Tertiary",
+			},
+			{
+				Title = "Hahaha",
+				Icon = "79268589053692",
+				Variant = "Tertiary",
+			},
+			{
+				Title = "Hahaha",
+				Icon = "rbxassetid://79268589053692",
+				Variant = "Tertiary",
+			},
+		},
+	})
+end
+
+-- */  Window  /* --
+local Window = WindUI:CreateWindow({
+	Title = "FlorenceArgenty  |  Scott",
+	Folder = "ftgshub",
+	Icon = "rbxassetid://79268589053692",
+	Size = UDim2.fromOffset(580, 460),
+    MinSize = Vector2.new(560, 350),
+    MaxSize = Vector2.new(850, 560),
+    BackgroundImageTransparency = 0.42,
+    Background = "rbxassetid://79268589053692",
+	NewElements = true,
+	HideSearchBar = false,
+	OpenButton = {
+		Title = "Florence Argenty/Scott",
+		CornerRadius = UDim.new(1, 0),
+		StrokeThickness = 3,
+		Enabled = true,
+		Draggable = true,
+		OnlyMobile = false,
+		Scale = 0.5,
+		Color = ColorSequence.new(
+			Color3.fromHex("#30FF6A"),
+			Color3.fromHex("#e7ff2f")
+		),
+	},
+	Topbar = {
+		Height = 44,
+		ButtonsType = "Mac",
+	},
+})
+
+do
+	Window:Tag({
+		Title = "v" .. WindUI.Version,
+		Icon = "121572094465765",
+		Color = Color3.fromHex("#1c1c1c"),
+		Border = true,
+	})
+end
+
+-- */  Colors  /* --
+local Purple = Color3.fromHex("#7775F2")
+local Yellow = Color3.fromHex("#ECA201")
+local Green = Color3.fromHex("#10C550")
+local Grey = Color3.fromHex("#83889E")
+local Blue = Color3.fromHex("#257AF7")
+local Red = Color3.fromHex("#EF4F1D")
+
+-- */ Other Functions /* --
+local function parseJSON(luau_table, indent, level, visited)
+	indent = indent or 2
+	level = level or 0
+	visited = visited or {}
+
+	local currentIndent = string.rep(" ", level * indent)
+	local nextIndent = string.rep(" ", (level + 1) * indent)
+
+	if luau_table == nil then
+		return "null"
+	end
+
+	local dataType = type(luau_table)
+
+	if dataType == "table" then
+		if visited[luau_table] then
+			return '"[Circular Reference]"'
+		end
+
+		visited[luau_table] = true
+
+		local isArray = true
+		local maxIndex = 0
+
+		for k, _ in pairs(luau_table) do
+			if type(k) == "number" and k > maxIndex then
+				maxIndex = k
+			end
+			if type(k) ~= "number" or k <= 0 or math.floor(k) ~= k then
+				isArray = false
+				break
+			end
+		end
+
+		local count = 0
+		for _ in pairs(luau_table) do
+			count = count + 1
+		end
+		if count ~= maxIndex and isArray then
+			isArray = false
+		end
+
+		if count == 0 then
+			return "{}"
+		end
+
+		if isArray then
+			if count == 0 then
+				return "[]"
+			end
+
+			local result = "[\n"
+
+			for i = 1, maxIndex do
+				result = result .. nextIndent .. parseJSON(luau_table[i], indent, level + 1, visited)
+				if i < maxIndex then
+					result = result .. ","
+				end
+				result = result .. "\n"
+			end
+
+			result = result .. currentIndent .. "]"
+			return result
+		else
+			local result = "{\n"
+			local first = true
+
+			local keys = {}
+			for k in pairs(luau_table) do
+				table.insert(keys, k)
+			end
+			table.sort(keys, function(a, b)
+				if type(a) == type(b) then
+					return tostring(a) < tostring(b)
+				else
+					return type(a) < type(b)
+				end
+			end)
+
+			for _, k in ipairs(keys) do
+				local v = luau_table[k]
+				if not first then
+					result = result .. ",\n"
+				else
+					first = false
+				end
+
+				if type(k) == "string" then
+					result = result .. nextIndent .. '"' .. k .. '": '
+				else
+					result = result .. nextIndent .. '"' .. tostring(k) .. '": '
+				end
+
+				result = result .. parseJSON(v, indent, level + 1, visited)
+			end
+
+			result = result .. "\n" .. currentIndent .. "}"
+			return result
+		end
+	elseif dataType == "string" then
+		local escaped = luau_table:gsub("\\", "\\\\")
+		escaped = escaped:gsub('"', '\\"')
+		escaped = escaped:gsub("\n", "\\n")
+		escaped = escaped:gsub("\r", "\\r")
+		escaped = escaped:gsub("\t", "\\t")
+
+		return '"' .. escaped .. '"'
+	elseif dataType == "number" then
+		return tostring(luau_table)
+	elseif dataType == "boolean" then
+		return luau_table and "true" or "false"
+	elseif dataType == "function" then
+		return '"function"'
+	else
+		return '"' .. dataType .. '"'
+	end
+end
+
+local function tableToClipboard(luau_table, indent)
+	indent = indent or 4
+	local jsonString = parseJSON(luau_table, indent)
+	setclipboard(jsonString)
+	return jsonString
+end
+
+-- ============================================================
+-- TABS CREATION (Fixed to prevent overwriting)
+-- ============================================================
+local Tabs = {
+    PlayerTab = Window:Tab({
+        Title = "Players",
+        Icon = "121572094465765",
+    }),
+    MiscTab = Window:Tab({
+        Title = "Misc",
+        Icon = "121572094465765",
+    }),
+    HalloweenTab = Window:Tab({
+        Title = "Halloween event",
+        Icon = "121572094465765",
+    }),
+}
+
+-- ============================================================
+-- PLAYER TAB FEATURES
+-- ============================================================
+
+Tabs.PlayerTab:Toggle({
+    Title = "Noclip",
+    Desc = "Pass through the Walls",
+    Value = false,
+    Callback = function(state)
+    end,
+})
+
+-- Keeps track of connections and created highlights for clean removal
+local activeHighlights = {}
+local playerConnections = {}
+
+Tabs.PlayerTab:Toggle({
+    Title = "Esp Players",
+    Desc = "Show Players Location",
+    Value = false,
+    Callback = function(state)
+        local Players = game:GetService("Players")
+        local LocalPlayer = Players.LocalPlayer
+
+        local function applyHighlight(player)
+            if player == LocalPlayer then return end
+
+            local function addHighlightToChar(character)
+                if not character then return end
+                if character:FindFirstChild("PlayerESP_Highlight") then return end
+
+                local highlight = Instance.new("Highlight")
+                highlight.Name = "PlayerESP_Highlight"
+                highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                highlight.FillTransparency = 0.5
+                highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                highlight.OutlineTransparency = 0
+                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                highlight.Parent = character
+
+                activeHighlights[character] = highlight
+            end
+
+            if player.Character then
+                addHighlightToChar(player.Character)
+            end
+
+            local conn = player.CharacterAdded:Connect(addHighlightToChar)
+            table.insert(playerConnections, conn)
+        end
+
+        if state then
+            for _, player in ipairs(Players:GetPlayers()) do
+                applyHighlight(player)
+            end
+
+            local joinConn = Players.PlayerAdded:Connect(applyHighlight)
+            table.insert(playerConnections, joinConn)
+        else
+            for character, highlight in pairs(activeHighlights) do
+                if highlight and highlight.Parent then
+                    highlight:Destroy()
+                end
+            end
+            table.clear(activeHighlights)
+
+            for _, conn in ipairs(playerConnections) do
+                if conn then
+                    conn:Disconnect()
+                end
+            end
+            table.clear(playerConnections)
+        end
+    end,
+})
+
+-- ⭐ Instant Prompt — its own flag
+local instantPromptEnabled = false
+
+Tabs.PlayerTab:Toggle({
+    Title = "Instant Prompt",
+    Desc = "Make the Prompt Becomes One Tap",
+    Value = false,
+    Callback = function(state)
+        instantPromptEnabled = state
+
+        local function updatePrompts()
+            for _, descendant in ipairs(workspace:GetDescendants()) do
+                if descendant:IsA("ProximityPrompt") then
+                    if instantPromptEnabled then
+                        descendant.HoldDuration = 0
+                    end
+                end
+            end
+        end
+
+        updatePrompts()
+
+        if instantPromptEnabled then
+            workspace.DescendantAdded:Connect(function(descendant)
+                if instantPromptEnabled and descendant:IsA("ProximityPrompt") then
+                    descendant.HoldDuration = 0
+                end
+            end)
+        end
+    end,
+})
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local camera = Workspace.CurrentCamera
+
+-- Coordinates
+local SPOT_1_SAFE   = CFrame.new(500.6, 70.3, -366.7)
+local SPOT_2        = CFrame.new(546.8, 70.3, -364.4)
+
+-- Speeds
+local INSTANT_SPEED = 9999
+local SLIDE_SPEED   = 600
+
+local currentSavedCFrame = nil
+
+-- ⭐ Anti Chase — its own flag
+local antiChaseEnabled = false
+local isExecuting = false
+
+local function updateCamera(character)
+	if character and character:FindFirstChild("Humanoid") then
+		camera.CameraSubject = character.Humanoid
+	end
+end
+
+local function moveTo(targetCFrame, speed)
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if not hrp or not humanoid then return end
+
+	updateCamera(char)
+	humanoid.PlatformStand = true
+
+	local startCFrame = hrp.CFrame
+	local distance = (startCFrame.Position - targetCFrame.Position).Magnitude
+	local duration = math.clamp(distance / speed, 0.01, 0.35)
+
+	local elapsed = 0
+	while elapsed < duration do
+		local dt = RunService.Heartbeat:Wait()
+		elapsed = elapsed + dt
+		local alpha = math.clamp(elapsed / duration, 0, 1)
+
+		if hrp and hrp.Parent then
+			hrp.CFrame = startCFrame:Lerp(targetCFrame, alpha)
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+		else
+			break
+		end
+	end
+
+	if hrp and hrp.Parent then
+		hrp.CFrame = targetCFrame
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+	end
+
+	if humanoid and humanoid.Parent then
+		humanoid.PlatformStand = false
+	end
+end
+
+local function isGuiActive(gui)
+	if not gui then return false end
+	if gui:IsA("ScreenGui") or gui:IsA("LayerCollector") then
+		return gui.Enabled
+	elseif gui:IsA("GuiObject") then
+		return gui.Visible
+	end
+	return false
+end
+
+-- Anti Chase loop
+task.spawn(function()
+	while true do
+		task.wait(0.15)
+		if antiChaseEnabled and not isExecuting then
+			local dropEggGui = playerGui:FindFirstChild("DropHeldEgg")
+
+			if isGuiActive(dropEggGui) then
+				isExecuting = true
+
+				local char = player.Character
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+				if hrp then
+					currentSavedCFrame = hrp.CFrame
+					moveTo(SPOT_1_SAFE, INSTANT_SPEED)
+					moveTo(SPOT_2, SLIDE_SPEED)
+					task.wait(0.9)
+					moveTo(currentSavedCFrame, INSTANT_SPEED)
+					updateCamera(char)
+				end
+
+				while isGuiActive(dropEggGui) do
+					task.wait(0.4)
+				end
+
+				task.wait(0.8)
+				isExecuting = false
+			end
+		end
+	end
+end)
+
+-- ⭐ ANTI CHASE TOGGLE
+Tabs.PlayerTab:Toggle({
+	Title = "Anti Chase",
+	Desc = "Bugged the Egg Guardian (Sometimes Not Work)",
+	Value = false,
+	Callback = function(state)
+		antiChaseEnabled = state
+		print("[AntiChase] enabled = " .. tostring(state))
+	end,
+})
+
+-- ══════════════════════════════════════════════════════════════════
+--  FLY  —  Infinite Yield-style flight
+-- ══════════════════════════════════════════════════════════════════
+local Fly = {}
+do
+	local UserInputService = game:GetService("UserInputService")
+	local RunService       = game:GetService("RunService")
+	local LP = game:GetService("Players").LocalPlayer
+
+	local enabled    = false
+	local speedValue = 20
+	local SPEED_UNIT = 5
+
+	local bodyGyro, bodyVel, heartConn, humBackup
+	local toggleUI
+	local flyUiUpdating = false
+
+	local function getHRP()
+		local char = LP.Character
+		if not char then return nil, nil end
+		return char:FindFirstChild("HumanoidRootPart"), char:FindFirstChildOfClass("Humanoid")
+	end
+
+	local function stop()
+		if bodyGyro then bodyGyro:Destroy(); bodyGyro = nil end
+		if bodyVel  then bodyVel:Destroy();  bodyVel  = nil end
+		if heartConn then heartConn:Disconnect(); heartConn = nil end
+
+		local _, hum = getHRP()
+		if hum and humBackup then
+			pcall(function()
+				hum.PlatformStand = humBackup.platform
+				hum.WalkSpeed     = humBackup.walk
+				hum.JumpPower     = humBackup.jump
+				hum.AutoRotate    = humBackup.rotate
+			end)
+		end
+		humBackup = nil
+	end
+
+	local function start()
+		stop()
+
+		local hrp, hum = getHRP()
+		if not hrp then return end
+
+		if hum then
+			humBackup = {
+				platform = hum.PlatformStand,
+				walk     = hum.WalkSpeed,
+				jump     = hum.JumpPower,
+				rotate   = hum.AutoRotate,
+			}
+			hum.PlatformStand = true
+			hum.WalkSpeed     = 0
+			hum.JumpPower     = 0
+			hum.AutoRotate    = false
+		end
+
+		bodyGyro = Instance.new("BodyGyro")
+		bodyGyro.P = 9e4
+		bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+		bodyGyro.CFrame = hrp.CFrame
+		bodyGyro.Parent = hrp
+
+		bodyVel = Instance.new("BodyVelocity")
+		bodyVel.velocity = Vector3.new(0, 0.1, 0)
+		bodyVel.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+		bodyVel.P = 12505
+		bodyVel.Parent = hrp
+
+		heartConn = RunService.Heartbeat:Connect(function()
+			if not enabled then return end
+			if not hrp or not hrp.Parent then return end
+
+			local cam = workspace.CurrentCamera
+			local move = Vector3.zero
+
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+				move = move + cam.CFrame.LookVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+				move = move - cam.CFrame.LookVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+				move = move - cam.CFrame.RightVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+				move = move + cam.CFrame.RightVector
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+				move = move + Vector3.new(0, 1, 0)
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+			or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
+				move = move - Vector3.new(0, 1, 0)
+			end
+
+			if move.Magnitude > 0 then move = move.Unit end
+
+			bodyGyro.CFrame = cam.CFrame
+			bodyVel.velocity = move * (speedValue * SPEED_UNIT)
+		end)
+	end
+
+	Fly.SetEnabled = function(v)
+		v = not not v
+		if v == enabled then return end
+		enabled = v
+		if enabled then start() else stop() end
+
+		if toggleUI and not flyUiUpdating then
+			flyUiUpdating = true
+			pcall(function()
+				if toggleUI.Set then toggleUI:Set(enabled)
+				elseif toggleUI.SetValue then toggleUI:SetValue(enabled) end
+			end)
+			flyUiUpdating = false
+		end
+
+		print("[Fly] enabled = " .. tostring(enabled))
+	end
+
+	Fly.SetSpeed = function(v)
+		speedValue = math.clamp(tonumber(v) or 20, 1, 100)
+	end
+
+	Fly.IsEnabled = function() return enabled end
+	Fly.GetSpeed  = function() return speedValue end
+	Fly.AttachToggle = function(tog) toggleUI = tog end
+
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+		if input.KeyCode == Enum.KeyCode.F then
+			Fly.SetEnabled(not enabled)
+		end
+	end)
+end
+
+-- ══════════════════════════════════════════════════════════════════
+--  HALLOWEEN EVENT TAB FEATURES
+-- ══════════════════════════════════════════════════════════════════
+
+-- ⭐ HALLOWEEN EGG (Formerly DropEgg Tween)
+local HalloweenEgg = {}
+do
+	local TARGET_CFRAME = CFrame.new(-5815.0, -202.5, -7251.5)
+	local SPEED         = 300
+
+	local enabled   = false
+	local isRunning = false
+	local toggleUI
+	local uiSyncing = false
+
+	local function getChar()
+		local char = player.Character
+		if not char then return nil, nil, nil end
+		return char,
+			char:FindFirstChild("HumanoidRootPart"),
+			char:FindFirstChildOfClass("Humanoid")
+	end
+
+	local function moveToTarget()
+		local char, hrp, hum = getChar()
+		if not hrp or not hum then return end
+
+		isRunning = true
+
+		pcall(function()
+			hum.PlatformStand = true
+			hum.AutoRotate    = false
+		end)
+
+		pcall(function()
+			camera.CameraSubject = hum
+		end)
+
+		local bv = Instance.new("BodyVelocity")
+		bv.Name        = "HalloweenEgg_BV"
+		bv.MaxForce    = Vector3.new(9e9, 9e9, 9e9)
+		bv.P           = 12505
+		bv.Velocity    = Vector3.zero
+		bv.Parent      = hrp
+
+		local bvConn = RunService.Heartbeat:Connect(function()
+			if not hrp or not hrp.Parent then return end
+			local delta = TARGET_CFRAME.Position - hrp.Position
+			if delta.Magnitude < 2 then
+				bv.Velocity = Vector3.zero
+				return
+			end
+			bv.Velocity = delta.Unit * SPEED
+		end)
+
+		while enabled and hrp and hrp.Parent do
+			if (hrp.Position - TARGET_CFRAME.Position).Magnitude <= 3 then
+				break
+			end
+			task.wait(0.05)
+		end
+
+		if hrp and hrp.Parent then
+			pcall(function()
+				hrp.CFrame = TARGET_CFRAME
+				hrp.AssemblyLinearVelocity  = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
+			end)
+		end
+
+		pcall(function() bvConn:Disconnect() end)
+		pcall(function() bv:Destroy() end)
+
+		if hum and hum.Parent then
+			pcall(function()
+				hum.PlatformStand = false
+				hum.AutoRotate    = true
+			end)
+		end
+
+		isRunning = false
+	end
+
+	task.spawn(function()
+		while true do
+			task.wait(0.1)
+			if enabled and not isRunning then
+				local gui = playerGui:FindFirstChild("DropHeldEgg")
+				if isGuiActive(gui) then
+					task.spawn(moveToTarget)
+				end
+			end
+		end
+	end)
+
+	HalloweenEgg.SetEnabled = function(v)
+		v = not not v
+		enabled = v
+
+		if toggleUI and not uiSyncing then
+			uiSyncing = true
+			pcall(function()
+				if toggleUI.Set then toggleUI:Set(enabled)
+				elseif toggleUI.SetValue then toggleUI:SetValue(enabled) end
+			end)
+			uiSyncing = false
+		end
+
+		print("[HalloweenEgg] enabled = " .. tostring(enabled))
+	end
+
+	HalloweenEgg.IsEnabled = function() return enabled end
+	HalloweenEgg.AttachToggle = function(tog) toggleUI = tog end
+end
+
+local halloweenEggToggle = Tabs.HalloweenTab:Toggle({
+	Title = "Halloween Egg",
+	Desc  = "Tween to safe spot when DropHeldEgg appears (BodyVelocity 300)",
+	Value = false,
+	Callback = function(state)
+		HalloweenEgg.SetEnabled(state)
+	end,
+})
+
+HalloweenEgg.AttachToggle(halloweenEggToggle)
+
+-- ⭐ GHOST HUNTER
+local GhostHunter = {}
+do
+	local SPEED            = 300
+	local CONTAINER_NAME   = "TrainGhostVisuals"
+	local PRIORITY         = { "Vengeful Spirit", "Haunted Spirit", "Lost Spirit" }
+	local HOVER_HEIGHT     = 10
+
+	local enabled   = false
+	local toggleUI
+	local uiSyncing = false
+	local bv
+	local savedHum
+
+	local function getHRP()
+		local char = player.Character
+		if not char then return nil, nil end
+		return char:FindFirstChild("HumanoidRootPart"), char:FindFirstChildOfClass("Humanoid")
+	end
+
+	local function getContainer()
+		return workspace:FindFirstChild(CONTAINER_NAME)
+	end
+
+	local function getHoverPos(model)
+		if not model or not model.Parent then return nil end
+		local ok, pos = pcall(function()
+			if model:IsA("Model") then
+				local cf, size = model:GetBoundingBox()
+				return cf.Position + Vector3.new(0, size.Y * 0.5 + HOVER_HEIGHT, 0)
+			elseif model:IsA("BasePart") then
+				return model.Position + Vector3.new(0, model.Size.Y * 0.5 + HOVER_HEIGHT, 0)
+			end
+			return nil
+		end)
+		return ok and pos or nil
+	end
+
+	local function pickTarget()
+		local container = getContainer()
+		if not container then return nil end
+		local hrp = getHRP()
+		local hrpPos = hrp and hrp.Position
+
+		for _, name in ipairs(PRIORITY) do
+			local best, bestDist = nil, math.huge
+			for _, child in ipairs(container:GetChildren()) do
+				if child.Name == name then
+					local ok, cf = pcall(function() return child:GetPivot() end)
+					if ok and cf then
+						local dist = hrpPos and (hrpPos - cf.Position).Magnitude or 0
+						if dist < bestDist then
+							bestDist = dist
+							best = child
+						end
+					end
+				end
+			end
+			if best then return best end
+		end
+		return nil
+	end
+
+	local function ensureBV(hrp)
+		if bv and bv.Parent == hrp then return end
+		if bv then bv:Destroy() end
+		bv = Instance.new("BodyVelocity")
+		bv.Name     = "GhostHunter_BV"
+		bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+		bv.P        = 12505
+		bv.Velocity = Vector3.zero
+		bv.Parent   = hrp
+	end
+
+	local function destroyBV()
+		if bv then bv:Destroy(); bv = nil end
+	end
+
+	local function saveHumanoidState(hum)
+		if savedHum then return end
+		savedHum = {
+			platform   = hum.PlatformStand,
+			walk       = hum.WalkSpeed,
+			autoRotate = hum.AutoRotate,
+		}
+		pcall(function()
+			hum.PlatformStand = true
+			hum.WalkSpeed     = 0
+			hum.AutoRotate    = false
+		end)
+	end
+
+	local function restoreHumanoidState()
+		if not savedHum then return end
+		local _, hum = getHRP()
+		if hum then
+			pcall(function()
+				hum.PlatformStand = savedHum.platform
+				hum.WalkSpeed     = savedHum.walk
+				hum.AutoRotate    = savedHum.autoRotate
+			end)
+		end
+		savedHum = nil
+	end
+
+	local function cleanup()
+		destroyBV()
+		restoreHumanoidState()
+	end
+
+	task.spawn(function()
+		while true do
+			if not enabled then
+				cleanup()
+				task.wait(0.2)
+			else
+				local hrp, hum = getHRP()
+				if not hrp or not hum then
+					cleanup()
+					task.wait(0.2)
+				else
+					saveHumanoidState(hum)
+
+					local target = pickTarget()
+					if not target then
+						destroyBV()
+						task.wait(0.2)
+					else
+						ensureBV(hrp)
+
+						while enabled and target and target.Parent do
+							local hrp2 = getHRP()
+							if not hrp2 then break end
+							if bv and bv.Parent ~= hrp2 then ensureBV(hrp2) end
+
+							local hoverPos = getHoverPos(target)
+							if bv and hoverPos then
+								local delta = hoverPos - hrp2.Position
+								if delta.Magnitude < 0.5 then
+									bv.Velocity = Vector3.zero
+								else
+									local vel = delta * 8
+									if vel.Magnitude > SPEED then
+										vel = vel.Unit * SPEED
+									end
+									bv.Velocity = vel
+								end
+							end
+
+							task.wait(0.05)
+						end
+
+						task.wait(0.1)
+					end
+				end
+			end
+		end
+	end)
+
+	GhostHunter.SetEnabled = function(v)
+		v = not not v
+		enabled = v
+		if not v then cleanup() end
+
+		if toggleUI and not uiSyncing then
+			uiSyncing = true
+			pcall(function()
+				if toggleUI.Set then toggleUI:Set(enabled)
+				elseif toggleUI.SetValue then toggleUI:SetValue(enabled) end
+			end)
+			uiSyncing = false
+		end
+
+		print("[GhostHunter] enabled = " .. tostring(enabled))
+	end
+
+	GhostHunter.IsEnabled = function() return enabled end
+	GhostHunter.AttachToggle = function(tog) toggleUI = tog end
+end
+
+local ghostHunterToggle = Tabs.HalloweenTab:Toggle({
+	Title = "Ghost Hunter",
+	Desc  = "Hover above rarest ghost (Vengeful > Haunted > Lost) · BodyVelocity max 300",
+	Value = false,
+	Callback = function(state)
+		GhostHunter.SetEnabled(state)
+	end,
+})
+
+GhostHunter.AttachToggle(ghostHunterToggle)
+
+
+-- ══════════════════════════════════════════════════════════════════
+--  MISC TAB FEATURES
+-- ══════════════════════════════════════════════════════════════════
+
+local flyToggle = Tabs.MiscTab:Toggle({
+    Title = "Fly",
+    Desc = "WASD · Space up · Shift down · Press F to toggle",
+    Value = false,
+    Callback = function(state)
+        Fly.SetEnabled(state)
+    end,
+})
+
+Fly.AttachToggle(flyToggle)
+
+Tabs.MiscTab:Slider({
+    Title = "Fly Speed",
+    Desc = "1 = slow  ·  100 = fast",
+    IsTooltip = true,
+    IsTextbox = true,
+    Step = 1,
+    Value = {
+        Min = 1,
+        Max = 100,
+        Default = 20,
+    },
+    Callback = function(value)
+        Fly.SetSpeed(value)
+    end,
+})
+
+--[[
+    Humanoid Swap Anti-Death Bypass
+--]]
+
+-- ============================================================
+-- SERVICES
+-- ============================================================
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local Workspace         = game:GetService("Workspace")
+local StarterGui        = game:GetService("StarterGui")
+
+local LocalPlayer       = Players.LocalPlayer
+local Camera            = Workspace.CurrentCamera
+
+-- ============================================================
+-- CONFIG / STATE
+-- ============================================================
+local isEnabled = false
+
+local ALL_STATES = {
+    Enum.HumanoidStateType.FallingDown,
+    Enum.HumanoidStateType.Ragdoll,
+    Enum.HumanoidStateType.GettingUp,
+    Enum.HumanoidStateType.Landed,
+    Enum.HumanoidStateType.Flying,
+    Enum.HumanoidStateType.Freefall,
+    Enum.HumanoidStateType.Seated,
+    Enum.HumanoidStateType.PlatformStanding,
+    Enum.HumanoidStateType.Dead,
+    Enum.HumanoidStateType.Swimming,
+    Enum.HumanoidStateType.Climbing,
+    Enum.HumanoidStateType.StrafingNoPhysics,
+    Enum.HumanoidStateType.Running,
+    Enum.HumanoidStateType.RunningNoPhysics,
+    Enum.HumanoidStateType.Physics,
+    Enum.HumanoidStateType.None,
+}
+
+local ActiveConnections = {}
+
+local function track(conn)
+    if conn then
+        table.insert(ActiveConnections, conn)
+    end
+    return conn
+end
+
+local function clearConnections()
+    for _, c in ipairs(ActiveConnections) do
+        pcall(function() c:Disconnect() end)
+    end
+    ActiveConnections = {}
+end
+
+local function safe(fn, ...)
+    local ok, err = pcall(fn, ...)
+    if not ok then
+        warn("[AntiDeath] " .. tostring(err))
+    end
+    return ok
+end
+
+local function SaveHumanoidProps(hum)
+    local saved = {}
+    pcall(function() saved.JumpPower          = hum.JumpPower          end)
+    pcall(function() saved.JumpHeight         = hum.JumpHeight         end)
+    pcall(function() saved.UseJumpPower       = hum.UseJumpPower       end)
+    pcall(function() saved.EvaluateStateMachine = hum.EvaluateStateMachine end)
+    pcall(function()
+        saved.States = {}
+        for _, st in ipairs(ALL_STATES) do
+            saved.States[st] = hum:GetStateEnabled(st)
+        end
+    end)
+    return saved
+end
+
+local function RestoreHumanoidProps(hum, saved)
+    if not saved then return end
+    pcall(function() if saved.JumpPower          ~= nil then hum.JumpPower          = saved.JumpPower          end end)
+    pcall(function() if saved.JumpHeight         ~= nil then hum.JumpHeight         = saved.JumpHeight         end end)
+    pcall(function() if saved.UseJumpPower       ~= nil then hum.UseJumpPower       = saved.UseJumpPower       end end)
+    pcall(function() if saved.EvaluateStateMachine ~= nil then hum.EvaluateStateMachine = saved.EvaluateStateMachine end end)
+    if saved.States then
+        for st, enabled in pairs(saved.States) do
+            pcall(function() hum:SetStateEnabled(st, enabled) end)
+        end
+    end
+end
+
+local function LockHealth(hum)
+    safe(function()
+        hum.MaxHealth = math.huge
+        hum.Health    = math.huge
+    end)
+end
+
+local function BlockDeathState(hum)
+    safe(function() hum.BreakJointsOnDeath = false end)
+    safe(function() hum.RequiresNeck       = false end)
+    safe(function() hum.Dead               = false end)
+end
+
+local function BindAntiDeath(hum)
+    track(hum.HealthChanged:Connect(function(h)
+        if not isEnabled then return end
+        pcall(function()
+            if h < hum.MaxHealth then
+                hum.Health = hum.MaxHealth
+            end
+        end)
+    end))
+
+    track(hum.Died:Connect(function()
+        if not isEnabled then return end
+        pcall(function()
+            hum.Dead   = false
+            hum.Health = math.huge
+        end)
+    end))
+end
+
+local function StartBackgroundLoop(hum)
+    track(RunService.Heartbeat:Connect(function()
+        local now = tick()
+        if not hum.Parent then return end
+        if not isEnabled then return end
+        if hum._lastAntiDeathTick and (now - hum._lastAntiDeathTick) < 0.1 then
+            return
+        end
+        hum._lastAntiDeathTick = now
+
+        pcall(function()
+            if hum.Health < hum.MaxHealth then
+                hum.Health = math.huge
+            end
+            if hum:GetStateEnabled(Enum.HumanoidStateType.Dead) then
+                hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+            end
+        end)
+    end))
+end
+
+local function RefreshControls(player, character)
+    safe(function()
+        local PlayerModule = require(player:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+        local controls = PlayerModule:GetControls()
+        if controls and controls.OnCharacterAdded then
+            controls:OnCharacterAdded(character)
+        end
+    end)
+end
+
+local function SwapHumanoid(character)
+    if not character then return end
+
+    local oldHum = character:FindFirstChildOfClass("Humanoid")
+    if not oldHum then
+        local timeout = tick() + 5
+        repeat
+            task.wait(0.05)
+            oldHum = character:FindFirstChildOfClass("Humanoid")
+        until oldHum or tick() > timeout
+    end
+    if not oldHum then
+        warn("[AntiDeath] Walang Humanoid na nahanap sa character.")
+        return
+    end
+
+    local saved = SaveHumanoidProps(oldHum)
+
+    local newHum
+    safe(function() newHum = oldHum:Clone() end)
+    if not newHum then
+        warn("[AntiDeath] Hindi ma-clone ang Humanoid.")
+        return
+    end
+
+    safe(function()
+        for _, child in ipairs(oldHum:GetChildren()) do
+            pcall(function() child.Parent = newHum end)
+        end
+    end)
+
+    safe(function() oldHum:Destroy() end)
+
+    safe(function() newHum.Parent = character end)
+
+    RestoreHumanoidProps(newHum, saved)
+
+    LockHealth(newHum)
+    BlockDeathState(newHum)
+    BindAntiDeath(newHum)
+
+    StartBackgroundLoop(newHum)
+
+    RefreshControls(LocalPlayer, character)
+
+    safe(function()
+        if Camera then
+            Camera.CameraSubject = newHum
+        end
+    end)
+
+    task.delay(0.25, function()
+        if not isEnabled then return end
+        safe(function()
+            local h = character:FindFirstChildOfClass("Humanoid")
+            if h then
+                LockHealth(h)
+                BlockDeathState(h)
+                RestoreHumanoidProps(h, saved)
+                if Camera then
+                    Camera.CameraSubject = h
+                end
+            end
+        end)
+    end)
+
+    return newHum
+end
+
+local function OnCharacterAdded(character)
+    if not isEnabled then return end
+
+    task.spawn(function()
+        local hum = character:WaitForChild("Humanoid", 10)
+        if not hum then return end
+        task.wait(0.1)
+        if isEnabled then
+            SwapHumanoid(character)
+        end
+    end)
+end
+
+local CharacterAddedConn
+
+local function Enable()
+    isEnabled = true
+
+    if CharacterAddedConn then
+        pcall(function() CharacterAddedConn:Disconnect() end)
+    end
+    CharacterAddedConn = LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
+
+    task.spawn(function()
+        local char = LocalPlayer.Character
+        if char and isEnabled then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                task.wait(0.1)
+                if isEnabled then
+                    SwapHumanoid(char)
+                end
+            end
+        end
+    end)
+end
+
+local function Disable()
+    isEnabled = false
+    clearConnections()
+    if CharacterAddedConn then
+        pcall(function() CharacterAddedConn:Disconnect() end)
+        CharacterAddedConn = nil
+    end
+end
+
+Tabs.MiscTab:Toggle({
+    Title = "Anti Death",
+    Desc  = "Use only for Admin Egg Abuse and don't use Treadmill once this is Enabled or you'll stuck",
+    Value = false,
+    Callback = function(state)
+        isEnabled = state
+        if state then
+            Enable()
+        else
+            Disable()
+        end
+    end,
+})
+
+local Players = game:GetService("Players")
+local speaker = Players.LocalPlayer
+
+Tabs.MiscTab:Slider({
+    Title = "WalkSpeed",
+    Desc = "Adjust your character's walking speed",
+    IsTooltip = true,
+    IsTextbox = true,
+    Step = 1,
+    Value = {
+        Min = 0,
+        Max = 1000,
+        Default = 16,
+    },
+    Callback = function(value)
+        pcall(function()
+            local char = speaker.Character
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = value
+                end
+            end
+        end)
+    end,
+})
+
+local Tabs = {
+	PredictorTab = Window:Tab({
+		Title = "Egg Predict",
+		Icon = "eye",
+	}),
+	EggAreaTab = Window:Tab({
+		Title = "Egg Area",
+		Icon = "map",
+	}),
+}
+
+
+-- ====================================================================
+-- EGG PREDICT (INVENTORY) TAB — WITH SEARCH BAR
+-- ====================================================================
+
+local TabsRef = (type(Tabs) == "table" and Tabs)
+    or (type(_G.Tabs) == "table" and _G.Tabs)
+    or (type(getgenv) == "function" and type(getgenv().Tabs) == "table" and getgenv().Tabs)
+    or nil
+
+local PredictorTab = TabsRef and (TabsRef.PredictorTab or TabsRef.PredicTab or TabsRef.EggPredict) or nil
+
+if not PredictorTab then return end
+
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local localPlayer       = Players.LocalPlayer
+
+-- ═══ COLORS ═══
+local COLOR_PLACED    = Color3.fromRGB(255, 211, 77)   -- Gold
+local COLOR_INVENTORY = Color3.fromRGB(127, 216, 255)  -- Cyan
+
+-- ═══ HELPERS ═══
+local function tryRequire(inst)
+    if not inst then return nil end
+    local ok, result = pcall(require, inst)
+    return ok and result or nil
+end
+local function findRS(...)
+    local node = ReplicatedStorage
+    for i, name in ipairs({...}) do
+        node = (i == 1) and node:WaitForChild(name, 10) or (node and node:FindFirstChild(name))
+        if not node then return nil end
+    end
+    return node
+end
+
+local Assets     = tryRequire(findRS("Data", "Assets"))
+local EggState   = tryRequire(findRS("Client", "EggState"))
+local Mutations  = tryRequire(findRS("Shared", "Modules", "Mutations"))
+local EggRecords = tryRequire(findRS("Shared", "Util", "EggRecords"))
+
+local networking = ReplicatedStorage:FindFirstChild("Packages")
+networking = networking and networking:FindFirstChild("Networking") or nil
+
+local function formatMoney(n)
+    n = tonumber(n) or 0
+    if n >= 1e12 then return string.format("%.2fT", n/1e12) end
+    if n >= 1e9  then return string.format("%.2fB", n/1e9)  end
+    if n >= 1e6  then return string.format("%.2fM", n/1e6)  end
+    if n >= 1000 then return string.format("%.1fK", n/1000) end
+    return tostring(math.floor(n))
+end
+
+local function formatWeight(n)
+    n = tonumber(n) or 0
+    if n >= 1e6  then return string.format("%.1fM Kg", n/1e6) end
+    if n >= 1000 then return string.format("%.1fK Kg", n/1000) end
+    return string.format("%d Kg", math.floor(n+0.5))
+end
+
+local function scaleFactor(s)
+    s = tonumber(s) or 1
+    if s > 5 then return (s/5)^1.2 * 19.637875755794113 end
+    return s^1.85
+end
+
+local function mutationMult(muts)
+    muts = type(muts) == "table" and muts or {}
+    if Mutations and type(Mutations.EarningsFor) == "function" then
+        local ok, r = pcall(Mutations.EarningsFor, muts)
+        if ok and type(r) == "number" then return r end
+    end
+    return 1
+end
+
+local function getAssetInfo(category)
+    category = tostring(category)
+    local dir = Assets and Assets.Directory
+    local entry = type(dir) == "table" and dir[category] or nil
+    if type(entry) ~= "table" then
+        return { Name = category, EarningRate = 0 }
+    end
+    return {
+        Name        = tostring(entry.DisplayName or category),
+        EarningRate = tonumber(entry.EarningRate) or 0,
+    }
+end
+
+local function getIncome(asset, scale, muts)
+    return asset.EarningRate * scaleFactor(scale) * mutationMult(muts)
+end
+
+local function getRarityColor(petInfo)
+    if not petInfo or not petInfo.Rarity then return Color3.fromRGB(150, 150, 150) end
+    if typeof(petInfo.Rarity.Color) == "Color3" then return petInfo.Rarity.Color end
+    return Color3.fromRGB(150, 150, 150)
+end
+
+local function getRarityName(petInfo)
+    if not petInfo or type(petInfo.Rarity) ~= "table" then return "COMMON" end
+    return string.upper(petInfo.Rarity.DisplayName or petInfo.Rarity._id or "COMMON")
+end
+
+local function getWeight(petName, scale)
+    if not EggRecords then return 0 end
+    local ok, r = pcall(EggRecords.WeightKgForScale, petName, scale)
+    if ok and tonumber(r) then return tonumber(r) end
+    return 0
+end
+
+local function getPetImage(petName)
+    local info = Assets and Assets.Directory and Assets.Directory[petName]
+    if info then
+        return info.Image or info.Icon or info.Thumbnail or info.AssetId or ""
+    end
+    return ""
+end
+
+local function getMutationsString(muts)
+    if not muts or type(muts) ~= "table" or next(muts) == nil then return "None" end
+    local list = {}
+    for k, v in pairs(muts) do
+        if type(k) == "number" then
+            table.insert(list, tostring(v))
+        elseif v == true then
+            table.insert(list, tostring(k))
+        elseif type(v) == "string" then
+            table.insert(list, tostring(v))
+        end
+    end
+    if #list == 0 then return "None" end
+    return table.concat(list, ", ")
+end
+
+local function readInventory()
+    if not EggState or type(EggState.ReadOwnerEggs) ~= "function" then return {} end
+    local ok, data = pcall(EggState.ReadOwnerEggs, localPlayer.UserId)
+    if not ok or type(data) ~= "table" then return {} end
+    
+    local list = {}
+    for uid, rec in pairs(data) do
+        if type(rec) == "table" and rec.AssetCategory then
+            local asset   = getAssetInfo(rec.AssetCategory)
+            local scale   = tonumber(rec.AssetScale) or 1
+            local muts    = type(rec.Mutations) == "table" and rec.Mutations or {}
+            local petInfo = Assets and Assets.Directory and Assets.Directory[rec.AssetCategory] or nil
+            
+            table.insert(list, {
+                Uid          = tostring(uid),
+                Name         = asset.Name,
+                Category     = rec.AssetCategory,
+                RarityName   = getRarityName(petInfo),
+                RarityColor  = getRarityColor(petInfo),
+                Scale        = scale,
+                Income       = getIncome(asset, scale, muts),
+                Weight       = getWeight(rec.AssetCategory, scale),
+                Placed       = rec.Placement ~= nil,
+                PlacementObj = (typeof(rec.Placement) == "Instance") and rec.Placement or nil,
+                Mutations    = muts,
+                Image        = getPetImage(rec.AssetCategory),
+            })
+        end
+    end
+    return list
+end
+
+local function wearEgg(uid)
+    if type(uid) ~= "string" then return false end
+    if EggState and type(EggState.WearEggTool) == "function" then
+        local ok = pcall(EggState.WearEggTool, uid)
+        if ok then return true end
+    end
+    if networking then
+        local rf = networking:FindFirstChild("RF/EggWorld/AskWearTool")
+        if rf and rf:IsA("RemoteFunction") then
+            local ok = pcall(rf.InvokeServer, rf, uid)
+            if ok then return true end
+        end
+    end
+    return false
+end
+
+local function findEggModel(uid)
+    local clientAssets = workspace:FindFirstChild("ClientRenderedAssets")
+    if clientAssets then
+        local exact = clientAssets:FindFirstChild(tostring(localPlayer.UserId) .. "_" .. uid) 
+                   or clientAssets:FindFirstChild(uid)
+        if exact then return exact end
+
+        for _, child in ipairs(clientAssets:GetChildren()) do
+            if string.find(child.Name, uid, 1, true) then
+                return child
+            end
+        end
+    end
+    return workspace:FindFirstChild(uid, true)
+end
+
+local function teleportToPlacedEgg(egg)
+    local model = egg.PlacementObj or findEggModel(egg.Uid)
+    local targetPos = nil
+    if model then
+        if model:IsA("Model") then
+            local primary = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+            if primary then targetPos = primary.Position end
+        elseif model:IsA("BasePart") then
+            targetPos = model.Position
+        end
+    end
+
+    local char = localPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if targetPos and hrp then
+        hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 5, 0))
+        WindUI:Notify({
+            Title = "Teleported: " .. egg.Name,
+            Content = "Mutations: " .. getMutationsString(egg.Mutations),
+            Icon = "map-pin",
+            Duration = 4,
+        })
+    else
+        WindUI:Notify({
+            Title = "Teleport Failed",
+            Content = "Hindi mahanap ang egg model sa workspace.",
+            Icon = "triangle-alert",
+            Duration = 3,
+        })
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- 🎯 SETUP WINDUITAB CONTAINER
+-- ═══════════════════════════════════════════════════════════
+local oldWrapper = PredictorTab.ContainerFrame:FindFirstChild("PredictCustomGridWrapper")
+if oldWrapper then oldWrapper:Destroy() end
+
+local wrapper = Instance.new("Frame")
+wrapper.Name = "PredictCustomGridWrapper"
+wrapper.Size = UDim2.new(1, -20, 1, -20)
+wrapper.Position = UDim2.new(0, 10, 0, 10)
+wrapper.BackgroundTransparency = 1
+wrapper.ClipsDescendants = true
+wrapper.Parent = PredictorTab.ContainerFrame
+
+-- 🎯 SEARCH BAR (Pinalit sa Scan #)
+local searchFrame = Instance.new("Frame")
+searchFrame.Size = UDim2.new(1, 0, 0, 28)
+searchFrame.Position = UDim2.new(0, 0, 0, 0)
+searchFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+searchFrame.BorderSizePixel = 0
+searchFrame.Parent = wrapper
+
+local sCorner = Instance.new("UICorner")
+sCorner.CornerRadius = UDim.new(0, 6)
+sCorner.Parent = searchFrame
+
+local searchIcon = Instance.new("TextLabel")
+searchIcon.Size = UDim2.new(0, 28, 1, 0)
+searchIcon.Position = UDim2.new(0, 4, 0, 0)
+searchIcon.BackgroundTransparency = 1
+searchIcon.Text = "🔍"
+searchIcon.TextColor3 = Color3.fromRGB(150, 150, 160)
+searchIcon.Font = Enum.Font.GothamBold
+searchIcon.TextSize = 14
+searchIcon.Parent = searchFrame
+
+local searchBox = Instance.new("TextBox")
+searchBox.Size = UDim2.new(1, -36, 1, 0)
+searchBox.Position = UDim2.new(0, 32, 0, 0)
+searchBox.BackgroundTransparency = 1
+searchBox.Text = ""
+searchBox.PlaceholderText = "Search pet name..."
+searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 130)
+searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+searchBox.Font = Enum.Font.Gotham
+searchBox.TextSize = 13
+searchBox.TextXAlignment = Enum.TextXAlignment.Left
+searchBox.ClearTextOnFocus = false
+searchBox.Parent = searchFrame
+
+local searchQuery = ""
+searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    searchQuery = string.lower(searchBox.Text)
+    lastHash = "" -- force refresh
+end)
+
+-- Scrolling Frame
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, -34) -- Binawasan ng 34px para magkasya search bar
+scroll.Position = UDim2.new(0, 0, 0, 34)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 4
+scroll.ScrollBarImageColor3 = Color3.fromRGB(77, 255, 122)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+scroll.ClipsDescendants = true
+scroll.Parent = wrapper
+
+local padding = Instance.new("UIPadding")
+padding.PaddingTop = UDim.new(0, 4)
+padding.PaddingLeft = UDim.new(0, 4)
+padding.PaddingRight = UDim.new(0, 8)
+padding.PaddingBottom = UDim.new(0, 6)
+padding.Parent = scroll
+
+local grid = Instance.new("UIGridLayout")
+grid.CellSize = UDim2.new(0, 120, 0, 170)
+grid.CellPadding = UDim2.new(0, 8, 0, 8)
+grid.SortOrder = Enum.SortOrder.LayoutOrder
+grid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+grid.Parent = scroll
+
+-- ═══ CARD CREATOR ═══
+local function createCard(egg, index)
+    local card = Instance.new("Frame")
+    card.Name = egg.Uid
+    card.Size = UDim2.new(0, 120, 0, 170)
+    card.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    card.BorderSizePixel = 0
+    card.LayoutOrder = index
+    card.ClipsDescendants = true
+    card.Parent = scroll
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = card
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = egg.RarityColor
+    stroke.Thickness = 2
+    stroke.Parent = card
+
+    local img = Instance.new("ImageLabel")
+    img.Size = UDim2.new(1, -10, 0.52, 0)
+    img.Position = UDim2.new(0, 5, 0, 5)
+    img.BackgroundTransparency = 1
+    img.Image = egg.Image ~= "" and egg.Image or "rbxassetid://0"
+    img.ScaleType = Enum.ScaleType.Fit
+    img.Parent = card
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, -10, 0, 18)
+    nameLabel.Position = UDim2.new(0, 5, 0.56, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = egg.Name
+    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextScaled = true
+    nameLabel.Parent = card
+
+    local rarityLabel = Instance.new("TextLabel")
+    rarityLabel.Size = UDim2.new(1, -10, 0, 12)
+    rarityLabel.Position = UDim2.new(0, 5, 0.66, 0)
+    rarityLabel.BackgroundTransparency = 1
+    rarityLabel.Text = egg.RarityName
+    rarityLabel.TextColor3 = egg.RarityColor
+    rarityLabel.Font = Enum.Font.GothamBold
+    rarityLabel.TextScaled = true
+    rarityLabel.Parent = card
+
+    local statsLabel = Instance.new("TextLabel")
+    statsLabel.Size = UDim2.new(1, -10, 0, 14)
+    statsLabel.Position = UDim2.new(0, 5, 0.76, 0)
+    statsLabel.BackgroundTransparency = 1
+    statsLabel.Text = string.format("x%.2f | %s", egg.Scale, formatWeight(egg.Weight))
+    statsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statsLabel.Font = Enum.Font.Gotham
+    statsLabel.TextScaled = true
+    statsLabel.Parent = card
+
+    local incomeLabel = Instance.new("TextLabel")
+    incomeLabel.Size = UDim2.new(1, -10, 0, 18)
+    incomeLabel.Position = UDim2.new(0, 5, 0.86, 0)
+    incomeLabel.BackgroundTransparency = 1
+    incomeLabel.Text = "$" .. formatMoney(egg.Income) .. "/s"
+    incomeLabel.TextColor3 = Color3.fromRGB(77, 255, 122)
+    incomeLabel.Font = Enum.Font.GothamBold
+    incomeLabel.TextScaled = true
+    incomeLabel.Parent = card
+
+    local tagFrame = Instance.new("Frame")
+    tagFrame.Size = UDim2.new(0, 60, 0, 18)
+    tagFrame.Position = UDim2.new(1, -65, 0, 5)
+    tagFrame.BackgroundColor3 = egg.Placed and Color3.fromRGB(150, 100, 0) or Color3.fromRGB(0, 100, 150)
+    tagFrame.BackgroundTransparency = 0.2
+    tagFrame.BorderSizePixel = 0
+    tagFrame.Parent = card
+
+    local tagCorner = Instance.new("UICorner")
+    tagCorner.CornerRadius = UDim.new(0, 4)
+    tagCorner.Parent = tagFrame
+
+    local tagText = Instance.new("TextLabel")
+    tagText.Size = UDim2.new(1, 0, 1, 0)
+    tagText.BackgroundTransparency = 1
+    tagText.Text = egg.Placed and "PLACED" or "INVENTORY"
+    tagText.TextColor3 = egg.Placed and COLOR_PLACED or COLOR_INVENTORY
+    tagText.Font = Enum.Font.GothamBold
+    tagText.TextSize = 9
+    tagText.Parent = tagFrame
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = card
+
+    if egg.Placed then
+        btn.MouseButton1Click:Connect(function() teleportToPlacedEgg(egg) end)
+    else
+        btn.MouseButton1Click:Connect(function() wearEgg(egg.Uid) end)
+    end
+    
+    btn.MouseEnter:Connect(function()
+        stroke.Color = Color3.fromRGB(255, 255, 255)
+        stroke.Thickness = 3
+    end)
+    btn.MouseLeave:Connect(function()
+        stroke.Color = egg.RarityColor
+        stroke.Thickness = 2
+    end)
+end
+
+-- ═══ RENDER LOOP ═══
+local lastHash = ""
+
+local function computeHash(eggs)
+    local sorted = {}
+    for _, e in ipairs(eggs) do sorted[#sorted+1] = e end
+    table.sort(sorted, function(a, b) return a.Uid < b.Uid end)
+    local parts = {}
+    for _, e in ipairs(sorted) do
+        parts[#parts+1] = string.format("%s:%s:%s:%s", e.Uid, tostring(e.Scale), tostring(e.Income), tostring(e.Placed))
+    end
+    return table.concat(parts, "|")
+end
+
+local function render()
+    local allEggs = readInventory()
+    table.sort(allEggs, function(a, b) return a.Income > b.Income end)
+
+    -- 🎯 FILTER LOGIC PARA SA SEARCH
+    local filtered = {}
+    for _, egg in ipairs(allEggs) do
+        if searchQuery == "" or string.find(string.lower(egg.Name), searchQuery, 1, true) then
+            table.insert(filtered, egg)
+        end
+    end
+
+    local h = computeHash(filtered) .. "|" .. tostring(#allEggs)
+    if h == lastHash then return end
+    lastHash = h
+
+    for _, child in ipairs(scroll:GetChildren()) do
+        if child:IsA("Frame") or child:IsA("TextLabel") then 
+            child:Destroy() 
+        end
+    end
+
+    if #filtered == 0 then
+        local emptyTxt = Instance.new("TextLabel")
+        emptyTxt.Size = UDim2.new(1, 0, 0, 50)
+        emptyTxt.BackgroundTransparency = 1
+        emptyTxt.Text = searchQuery ~= "" and "No pets match your search" or "Inventory Empty"
+        emptyTxt.TextColor3 = Color3.fromRGB(150, 150, 150)
+        emptyTxt.Font = Enum.Font.GothamBold
+        emptyTxt.TextSize = 16
+        emptyTxt.Parent = scroll
+        return
+    end
+
+    for i, egg in ipairs(filtered) do
+        createCard(egg, i)
+    end
+end
+
+task.spawn(function()
+    pcall(render)
+    while true do
+        task.wait(1) -- Auto refresh every 2 sec
+        pcall(render)
+    end
+end)
+
+
+
+ 
+-- ====================================================================
+-- WINDUITY INTEGRATION — EGG AREA TAB (FIXED SEARCH BAR SIZE)
+-- ====================================================================
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players           = game:GetService("Players")
+local localPlayer       = Players.LocalPlayer
+
+local EggAreaTab = TabsRef and TabsRef.EggAreaTab or nil
+
+if EggAreaTab then
+    print("[EggArea] Injecting Card Viewer with Matched Search Bar Size...")
+
+    -- ═══ MODULES ═══
+    local okState, eggState   = pcall(function() return require(ReplicatedStorage.Client.EggState) end)
+    local okAssets, assets     = pcall(function() return require(ReplicatedStorage.Data.Assets) end)
+    local okRecords, eggRecords = pcall(function() return require(ReplicatedStorage.Shared.Util.EggRecords) end)
+    local okMuts, mutations    = pcall(function() return require(ReplicatedStorage.Shared.Modules.Mutations) end)
+
+    -- ═══ HELPERS ═══
+    local function formatNumber(n)
+        n = tonumber(n) or 0
+        if n >= 1e12 then return string.format("%.2fT", n/1e12) end
+        if n >= 1e9  then return string.format("%.2fB", n/1e9)  end
+        if n >= 1e6  then return string.format("%.2fM", n/1e6)  end
+        if n >= 1e3  then return string.format("%.1fK", n/1e3)  end
+        return tostring(math.floor(n))
+    end
+
+    local function formatWeight(n)
+        n = tonumber(n) or 0
+        if n >= 1e6 then return string.format("%.1fM KG", n / 1e6) end
+        if n >= 1000 then return string.format("%.1fK KG", n / 1000) end
+        return string.format("%d KG", math.floor(n + 0.5))
+    end
+
+    local function getValue(petInfo, scale, muts)
+        if not petInfo then return 0 end
+        local scaleFactor = scale > 5
+            and (scale / 5) ^ 1.2 * 19.637875755794113
+            or  scale ^ 1.85
+        local mutMult = 1
+        if mutations and type(mutations.EarningsFor) == "function" then
+            local ok, result = pcall(mutations.EarningsFor, muts or {})
+            if ok and type(result) == "number" then mutMult = result end
+        end
+        return (petInfo.EarningRate or 0) * scaleFactor * mutMult
+    end
+
+    local function getRarityColor(petInfo)
+        if not petInfo or not petInfo.Rarity then return Color3.fromRGB(255, 255, 255) end
+        if typeof(petInfo.Rarity.Color) == "Color3" then return petInfo.Rarity.Color end
+        return Color3.fromRGB(255, 255, 255)
+    end
+
+    local function getRarityName(petInfo)
+        if not petInfo or type(petInfo.Rarity) ~= "table" then return "COMMON" end
+        return string.upper(petInfo.Rarity.DisplayName or petInfo.Rarity._id or "COMMON")
+    end
+
+    local function getPetImage(petInfo)
+        if not petInfo then return "" end
+        return petInfo.Image or petInfo.Icon or petInfo.Thumbnail or petInfo.AssetId or ""
+    end
+
+    local function teleportTo(cframe)
+        if typeof(cframe) ~= "CFrame" then return end
+        local char = localPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        pcall(function() hrp.CFrame = cframe + Vector3.new(0, 5, 0) end)
+    end
+
+    -- ═══ SETUP WINDUITAB CONTAINER ═══
+    local oldWrapper = EggAreaTab.ContainerFrame:FindFirstChild("EggAreaCustomWrapper")
+    if oldWrapper then oldWrapper:Destroy() end
+
+    local wrapper = Instance.new("Frame")
+    wrapper.Name = "EggAreaCustomWrapper"
+    wrapper.Size = UDim2.new(1, -20, 1, -20)
+    wrapper.Position = UDim2.new(0, 10, 0, 10)
+    wrapper.BackgroundTransparency = 1
+    wrapper.ClipsDescendants = true
+    wrapper.Parent = EggAreaTab.ContainerFrame
+
+-- 🎯 SEARCH BAR (Pinalit sa Scan #)
+local searchFrame = Instance.new("Frame")
+searchFrame.Size = UDim2.new(1, 0, 0, 28)
+searchFrame.Position = UDim2.new(0, 0, 0, 0)
+searchFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+searchFrame.BorderSizePixel = 0
+searchFrame.Parent = wrapper
+
+local sCorner = Instance.new("UICorner")
+sCorner.CornerRadius = UDim.new(0, 6)
+sCorner.Parent = searchFrame
+
+local searchIcon = Instance.new("TextLabel")
+searchIcon.Size = UDim2.new(0, 28, 1, 0)
+searchIcon.Position = UDim2.new(0, 4, 0, 0)
+searchIcon.BackgroundTransparency = 1
+searchIcon.Text = "🔍"
+searchIcon.TextColor3 = Color3.fromRGB(150, 150, 160)
+searchIcon.Font = Enum.Font.GothamBold
+searchIcon.TextSize = 14
+searchIcon.Parent = searchFrame
+
+local searchBox = Instance.new("TextBox")
+searchBox.Size = UDim2.new(1, -36, 1, 0)
+searchBox.Position = UDim2.new(0, 32, 0, 0)
+searchBox.BackgroundTransparency = 1
+searchBox.Text = ""
+searchBox.PlaceholderText = "Search pet name..."
+searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 130)
+searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+searchBox.Font = Enum.Font.Gotham
+searchBox.TextSize = 13
+searchBox.TextXAlignment = Enum.TextXAlignment.Left
+searchBox.ClearTextOnFocus = false
+searchBox.Parent = searchFrame
+
+    local searchQuery = ""
+
+-- Scrolling Frame
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, -34) -- Binawasan ng 34px para magkasya search bar
+scroll.Position = UDim2.new(0, 0, 0, 34)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 4
+scroll.ScrollBarImageColor3 = Color3.fromRGB(77, 255, 122)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+scroll.ClipsDescendants = true
+scroll.Parent = wrapper
+
+local padding = Instance.new("UIPadding")
+padding.PaddingTop = UDim.new(0, 4)
+padding.PaddingLeft = UDim.new(0, 4)
+padding.PaddingRight = UDim.new(0, 8)
+padding.PaddingBottom = UDim.new(0, 6)
+padding.Parent = scroll
+
+local grid = Instance.new("UIGridLayout")
+grid.CellSize = UDim2.new(0, 120, 0, 170)
+grid.CellPadding = UDim2.new(0, 8, 0, 8)
+grid.SortOrder = Enum.SortOrder.LayoutOrder
+grid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+grid.Parent = scroll
+
+-- ═══ ROTATING BACKGROUND ENGINE ═══
+local RunService = game:GetService("RunService")
+local rotatingImages = {}
+local ROTATION_SPEED = 45 -- degrees per second (lakasan/mahina)
+
+RunService.Heartbeat:Connect(function(dt)
+    for i = #rotatingImages, 1, -1 do
+        local img = rotatingImages[i]
+        if img and img.Parent then
+            img.Rotation = (img.Rotation + ROTATION_SPEED * dt) % 360
+        else
+            table.remove(rotatingImages, i)
+        end
+    end
+end)
+
+
+
+
+
+
+    -- ═══ RENDER FUNCTION ═══
+    local function updateList()
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextLabel") then
+                child:Destroy()
+            end
+        end
+
+        local allEggs = {}
+        if okState and eggState then
+            local ok, result = pcall(eggState.ReadFieldEggs)
+            if ok and type(result) == "table" and type(result.Records) == "table" then
+                for _, record in pairs(result.Records) do
+                    if type(record) == "table" and record.AssetCategory then
+                        local petName = record.AssetCategory
+                        local petInfo = assets and assets.Directory and assets.Directory[petName] or nil
+                        local displayName = petInfo and (petInfo.DisplayName or petName) or petName
+                        local scale = tonumber(record.AssetScale) or 1
+
+                        local kg = 0
+                        if okRecords and eggRecords and type(eggRecords.WeightKgForScale) == "function" then
+                            local okKg, resKg = pcall(eggRecords.WeightKgForScale, petName, scale)
+                            if okKg and tonumber(resKg) then kg = tonumber(resKg) end
+                        end
+
+                        if searchQuery == "" or string.find(string.lower(displayName), searchQuery, 1, true) then
+                            table.insert(allEggs, {
+                                Name         = displayName,
+                                RarityName   = getRarityName(petInfo),
+                                RarityColor  = getRarityColor(petInfo),
+                                Scale        = scale,
+                                Income       = getValue(petInfo, scale, record.Mutations),
+                                Weight       = kg,
+                                BottomCFrame = record.BottomCFrame,
+                                Image        = getPetImage(petInfo),
+                            })
+                        end
+                    end
+                end
+            end
+        end
+
+        table.sort(allEggs, function(a, b) return a.Income > b.Income end)
+
+        if #allEggs == 0 then
+            local empty = Instance.new("TextLabel")
+            empty.Size = UDim2.new(1, 0, 0, 40)
+            empty.BackgroundTransparency = 1
+            empty.Text = searchQuery ~= "" and "No eggs match search" or "No eggs in area"
+            empty.TextColor3 = Color3.fromRGB(150, 150, 150)
+            empty.Font = Enum.Font.GothamBold
+            empty.TextSize = 13
+            empty.Parent = scroll
+        else
+            for i, egg in ipairs(allEggs) do
+
+
+local card = Instance.new("Frame")
+card.Size = UDim2.new(0, 120, 0, 170)
+card.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+card.BorderSizePixel = 0
+card.LayoutOrder = i
+card.ClipsDescendants = true   -- 🔑 para di lumabas yung rotating image sa corners
+card.Parent = scroll
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = card
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = egg.RarityColor
+stroke.Thickness = 2
+stroke.Parent = card
+
+-- 🖼️ ROTATING BACKGROUND IMAGE
+local bgImage = Instance.new("ImageLabel")
+bgImage.Size = UDim2.new(1.5, 0, 1.5, 0)          -- mas malaki para laging sakop ang card
+bgImage.Position = UDim2.new(-0.25, 0, -0.25, 0)  -- i-center
+bgImage.BackgroundTransparency = 1
+bgImage.Image = "rbxassetid://135083906498742"
+bgImage.ImageTransparency = 0.5                   -- 0 = full visible, 1 = invisible
+bgImage.ScaleType = Enum.ScaleType.Crop
+bgImage.ZIndex = 0                                -- nasa likod
+bgImage.Parent = card
+table.insert(rotatingImages, bgImage)
+
+
+
+
+                local img = Instance.new("ImageLabel")
+                img.ZIndex = 2
+                img.Size = UDim2.new(1, -10, 0.52, 0)
+                img.Position = UDim2.new(0, 5, 0, 5)
+                img.BackgroundTransparency = 1
+                img.Image = egg.Image ~= "" and egg.Image or "rbxassetid://0"
+                img.ScaleType = Enum.ScaleType.Fit
+                img.Parent = card
+
+                local nameLabel = Instance.new("TextLabel")
+                nameLabel.ZIndex = 2
+                nameLabel.Size = UDim2.new(1, -10, 0, 18)
+                nameLabel.Position = UDim2.new(0, 5, 0.56, 0)
+                nameLabel.BackgroundTransparency = 1
+                nameLabel.Text = egg.Name
+                nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                nameLabel.Font = Enum.Font.GothamBold
+                nameLabel.TextScaled = true
+                nameLabel.Parent = card
+
+                local rarityLabel = Instance.new("TextLabel")
+                rarityLabel.ZIndex = 2
+                rarityLabel.Size = UDim2.new(1, -10, 0, 12)
+                rarityLabel.Position = UDim2.new(0, 5, 0.66, 0)
+                rarityLabel.BackgroundTransparency = 1
+                rarityLabel.Text = egg.RarityName
+                rarityLabel.TextColor3 = egg.RarityColor
+                rarityLabel.Font = Enum.Font.GothamBold
+                rarityLabel.TextScaled = true
+                rarityLabel.Parent = card
+
+                local statsLabel = Instance.new("TextLabel")
+                statsLabel.ZIndex = 2
+                statsLabel.Size = UDim2.new(1, -10, 0, 14)
+                statsLabel.Position = UDim2.new(0, 5, 0.76, 0)
+                statsLabel.BackgroundTransparency = 1
+                statsLabel.Text = string.format("x%.2f | %s", egg.Scale, formatWeight(egg.Weight))
+                statsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+                statsLabel.Font = Enum.Font.Gotham
+                statsLabel.TextScaled = true
+                statsLabel.Parent = card
+
+                local incomeLabel = Instance.new("TextLabel")
+                incomeLabel.ZIndex = 2
+                incomeLabel.Size = UDim2.new(1, -10, 0, 18)
+                incomeLabel.Position = UDim2.new(0, 5, 0.86, 0)
+                incomeLabel.BackgroundTransparency = 1
+                incomeLabel.Text = "$" .. formatNumber(egg.Income) .. "/s"
+                incomeLabel.TextColor3 = Color3.fromRGB(77, 255, 122)
+                incomeLabel.Font = Enum.Font.GothamBold
+                incomeLabel.TextScaled = true
+                incomeLabel.Parent = card
+
+                local btn = Instance.new("TextButton")
+                btn.ZIndex = 2
+                btn.Size = UDim2.new(1, 0, 1, 0)
+                btn.BackgroundTransparency = 1
+                btn.Text = ""
+                btn.Parent = card
+                btn.MouseButton1Click:Connect(function()
+                    teleportTo(egg.BottomCFrame)
+                end)
+            end
+        end
+    end
+
+    -- Live Search Listener
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        searchQuery = string.lower(searchBox.Text or "")
+        updateList()
+    end)
+
+    -- Background Auto Refresh
+    task.spawn(function()
+        while wrapper.Parent do
+            updateList()
+            task.wait(2)
+        end
+    end)
+
+    print("[EggArea] WindUI Tab Cards successfully loaded with matched search bar!")
+else
+    warn("[EggArea] TabsRef.EggAreaTab not found!")
+end
