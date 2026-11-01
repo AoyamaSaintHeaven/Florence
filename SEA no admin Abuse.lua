@@ -102,7 +102,7 @@ local Window = WindUI:CreateWindow({
 
 do
 	Window:Tag({
-		Title = "v" .. WindUI.Version,
+		Title = "v1.6.67" .. WindUI.Version,
 		Icon = "121572094465765",
 		Color = Color3.fromHex("#1c1c1c"),
 		Border = true,
