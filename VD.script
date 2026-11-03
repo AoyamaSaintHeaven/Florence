@@ -30,31 +30,6 @@ do
 	end
 end
 
-function createPopup()
-	return WindUI:Popup({
-		Title = "Florence",
-		Icon = "rbxassetid://79268589053692",
-		Content = "Hello!",
-		Buttons = {
-			{
-				Title = "Hahaha",
-				Icon = "rbxassetid://79268589053692",
-				Variant = "Tertiary",
-			},
-			{
-				Title = "Hahaha",
-				Icon = "79268589053692",
-				Variant = "Tertiary",
-			},
-			{
-				Title = "Hahaha",
-				Icon = "rbxassetid://79268589053692",
-				Variant = "Tertiary",
-			},
-		},
-	})
-end
-
 -- */  Window  /* --
 local Window = WindUI:CreateWindow({
 	Title = "FlorenceArgenty  |  Scott",
@@ -106,84 +81,8 @@ local Grey = Color3.fromHex("#83889E")
 local Blue = Color3.fromHex("#257AF7")
 local Red = Color3.fromHex("#EF4F1D")
 
--- */ Other Functions /* --
-local function parseJSON(luau_table, indent, level, visited)
-	indent = indent or 2
-	level = level or 0
-	visited = visited or {}
-
-	local currentIndent = string.rep(" ", level * indent)
-	local nextIndent = string.rep(" ", (level + 1) * indent)
-
-	if luau_table == nil then return "null" end
-
-	local dataType = type(luau_table)
-
-	if dataType == "table" then
-		if visited[luau_table] then return '"[Circular Reference]"' end
-		visited[luau_table] = true
-
-		local isArray = true
-		local maxIndex = 0
-
-		for k, _ in pairs(luau_table) do
-			if type(k) == "number" and k > maxIndex then maxIndex = k end
-			if type(k) ~= "number" or k <= 0 or math.floor(k) ~= k then isArray = false break end
-		end
-
-		local count = 0
-		for _ in pairs(luau_table) do count = count + 1 end
-		if count ~= maxIndex and isArray then isArray = false end
-		if count == 0 then return "{}" end
-
-		if isArray then
-			if count == 0 then return "[]" end
-			local result = "[\n"
-			for i = 1, maxIndex do
-				result = result .. nextIndent .. parseJSON(luau_table[i], indent, level + 1, visited)
-				if i < maxIndex then result = result .. "," end
-				result = result .. "\n"
-			end
-			result = result .. currentIndent .. "]"
-			return result
-		else
-			local result = "{\n"
-			local first = true
-			local keys = {}
-			for k in pairs(luau_table) do table.insert(keys, k) end
-			table.sort(keys, function(a, b)
-				if type(a) == type(b) then return tostring(a) < tostring(b)
-				else return type(a) < type(b) end
-			end)
-
-			for _, k in ipairs(keys) do
-				local v = luau_table[k]
-				if not first then result = result .. ",\n" else first = false end
-				if type(k) == "string" then result = result .. nextIndent .. '"' .. k .. '": '
-				else result = result .. nextIndent .. '"' .. tostring(k) .. '": ' end
-				result = result .. parseJSON(v, indent, level + 1, visited)
-			end
-			result = result .. "\n" .. currentIndent .. "}"
-			return result
-		end
-	elseif dataType == "string" then
-		local escaped = luau_table:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "\\r"):gsub("\t", "\\t")
-		return '"' .. escaped .. '"'
-	elseif dataType == "number" then return tostring(luau_table)
-	elseif dataType == "boolean" then return luau_table and "true" or "false"
-	elseif dataType == "function" then return '"function"'
-	else return '"' .. dataType .. '"' end
-end
-
-local function tableToClipboard(luau_table, indent)
-	indent = indent or 4
-	local jsonString = parseJSON(luau_table, indent)
-	setclipboard(jsonString)
-	return jsonString
-end
-
 --==========================================================================
---  KILLEROST SCANNER  —  integrated with WindUI
+--  KILLEROST SCANNER  —  Optimized for Mobile + Killer Change Detection
 --==========================================================================
 
 local Players   = cloneref(game:GetService("Players"))
@@ -192,8 +91,8 @@ local Workspace = cloneref(game:GetService("Workspace"))
 --=========================  CONFIG  =======================================
 local CONFIG = {
 	Keyword             = "killerost",
-	ScanInterval        = 3,
-	Debounce            = 0.6,
+	ScanInterval        = 10,   
+	Debounce            = 1.5,  
 	Fill                = Color3.fromRGB(255, 45, 45),
 	Outline             = Color3.fromRGB(255, 45, 45),
 	FillTransparency    = 0.45,
@@ -203,21 +102,27 @@ local CONFIG = {
 --=========================  SCAN CORE  ====================================
 
 local tracked    = {}
+local knownKillerScripts = {} -- CACHE: Remembers scripts that match, even if moved
 local autoScan   = true
 local espEnabled = true
+local currentKillerModel = nil -- Tracks the active killer
 
 local function getScriptText(obj)
 	local parts = { obj.Name, obj.Parent and obj.Parent.Name or "" }
 	local ok, src = pcall(function() return obj.Source end)
-	if ok and type(src) == "string" then parts[#parts + 1] = src end
-	if getscriptbytecode then
-		local ok2, bc = pcall(getscriptbytecode, obj)
-		if ok2 and type(bc) == "string" then parts[#parts + 1] = bc end
-	end
-	if getsenv then
-		local ok3, env = pcall(getsenv, obj)
-		if ok3 and type(env) == "table" then
-			for k in pairs(env) do parts[#parts + 1] = tostring(k) end
+	
+	if ok and type(src) == "string" and src ~= "" then 
+		parts[#parts + 1] = src 
+	else
+		if getscriptbytecode then
+			local ok2, bc = pcall(getscriptbytecode, obj)
+			if ok2 and type(bc) == "string" then parts[#parts + 1] = bc end
+		end
+		if getsenv then
+			local ok3, env = pcall(getsenv, obj)
+			if ok3 and type(env) == "table" then
+				for k in pairs(env) do parts[#parts + 1] = tostring(k) end
+			end
 		end
 	end
 	return table.concat(parts, "\n")
@@ -228,11 +133,22 @@ local function isHumanoidModel(inst)
 end
 
 local function scanModelForKeyword(model)
+	if tracked[model] then return nil end
+	
 	for _, d in ipairs(model:GetDescendants()) do
 		if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ModuleScript") then
-			local text = getScriptText(d)
-			if text ~= "" and string.find(string.lower(text), CONFIG.Keyword, 1, true) then
+			-- If we ALREADY know this is a killer script (e.g. game moved it), instantly flag it
+			if knownKillerScripts[d] then
 				return d
+			end
+			
+			-- If it's a new script, scan it
+			if not knownKillerScripts[d] then
+				local text = getScriptText(d)
+				if text ~= "" and string.find(string.lower(text), CONFIG.Keyword, 1, true) then
+					knownKillerScripts[d] = true
+					return d
+				end
 			end
 		end
 	end
@@ -254,6 +170,21 @@ local function applyESP(model, scriptObj)
 	hl.Parent              = model
 
 	tracked[model] = { highlight = hl, scriptName = scriptObj.Name }
+
+	-- DETECT KILLER CHANGE
+	if currentKillerModel ~= model then
+		currentKillerModel = model
+		
+		-- If the UI is ready, update the status and send a notification
+		if Window then
+			Window:Notify({
+				Title = "Killer Detected!",
+				Content = model.Name .. " is the Killer.",
+				Icon = "rbxassetid://121572094465765",
+				Duration = 5
+			})
+		end
+	end
 end
 
 local function clearESP()
@@ -304,24 +235,46 @@ local function fullScan()
 	scanning = true
 
 	local found = 0
+	local count = 0
+	local foundKillerModel = nil
 
 	local ok, err = pcall(function()
 		for _, obj in ipairs(Workspace:GetDescendants()) do
-			if isHumanoidModel(obj) then
-				local hit = scanModelForKeyword(obj)
-				if hit then
-					found += 1
-					applyESP(obj, hit)
+			if obj:IsA("Model") then
+				count = count + 1
+				if count % 50 == 0 then
+					task.wait() -- Anti-lag frame yield
+				end
+
+				if isHumanoidModel(obj) then
+					local hit = scanModelForKeyword(obj)
+					if hit then
+						found += 1
+						applyESP(obj, hit)
+						foundKillerModel = obj
+					end
 				end
 			end
 		end
 	end)
 
+	-- Check if the old killer is still valid
+	local killerStillExists = false
 	for model, data in pairs(tracked) do
 		if not model.Parent or not model:FindFirstChildOfClass("Humanoid") then
 			if data.highlight then data.highlight:Destroy() end
 			tracked[model] = nil
+			if model == currentKillerModel then
+				currentKillerModel = nil -- Killer left or died
+			end
+		elseif model == currentKillerModel then
+			killerStillExists = true
 		end
+	end
+
+	-- If the killer was removed and we found a new one, trigger a change
+	if not killerStillExists and foundKillerModel then
+		currentKillerModel = foundKillerModel
 	end
 
 	foundCount = found
@@ -346,13 +299,11 @@ local function queueRescan()
 end
 
 Workspace.DescendantAdded:Connect(function(inst)
-	if inst:IsA("Script") or inst:IsA("LocalScript") or inst:IsA("ModuleScript")
-	or inst:IsA("Model") or inst:IsA("Humanoid") or inst:IsA("BasePart") then
+	if inst:IsA("Script") or inst:IsA("LocalScript") or inst:IsA("ModuleScript") or inst:IsA("Model") then
 		queueRescan()
 	end
 end)
 Workspace.DescendantRemoving:Connect(queueRescan)
-Workspace.ChildAdded:Connect(queueRescan)
 
 --==========================================================================
 --                              UI TABS
@@ -389,7 +340,7 @@ local Camera               = workspace.CurrentCamera
 local AUTO_GEN_CONFIG = {
 	LOCK_OFFSET     = 105,
 	SUBMIT_DELAY    = 0.15,
-	STARTUP_GRACE   = 8.0,    -- Give the game 8 seconds to fully load before engaging
+	STARTUP_GRACE   = 8.0,    
 	CHECK_GRACE     = 0.15,   
 	MOUSE_HOLD      = 0.05,   
 }
@@ -405,7 +356,6 @@ local function autogenLog(message, isError)
 	print((isError and "[ERROR] " or "[INFO] ") .. tostring(message))
 end
 
--- Player must have a spawned, alive character
 local function isPlayerReady()
 	local char = LocalPlayer.Character
 	if not char then return false end
@@ -416,7 +366,7 @@ end
 
 task.spawn(function()
 	while not isPlayerReady() do task.wait(0.25) end
-	task.wait(1) -- Wait an extra second after spawn
+	task.wait(1) 
 	gameReadyAt = tick()
 	autogenLog("Player ready. Auto Generator armed.")
 end)
@@ -453,7 +403,6 @@ local function isActionButtonReady(button)
 	return true
 end
 
--- 1. Fire connections directly (Safe. Does not touch the screen/camera).
 local function fireButtonViaConnections(button)
 	if not button or not getconnections then return false end
 	local fired = false
@@ -475,8 +424,6 @@ local function fireButtonViaConnections(button)
 	return fired
 end
 
--- 2. Fallback: Use a MOUSE click (Not a touch event!). 
--- Mobile camera scripts ignore mouse clicks, so it won't lock the camera.
 local function fireButtonViaMouse(button)
 	if not button or not VirtualInputManager then return false end
 	local pos, size = button.AbsolutePosition, button.AbsoluteSize
@@ -484,10 +431,8 @@ local function fireButtonViaMouse(button)
 	local cy = pos.Y + size.Y / 2
 
 	local ok = pcall(function()
-		-- Button 1 (Left click), true = pressed down
 		VirtualInputManager:SendMouseButtonEvent(cx, cy, 1, true, game, 1)
 		task.wait(AUTO_GEN_CONFIG.MOUSE_HOLD)
-		-- Button 1 (Left click), false = released
 		VirtualInputManager:SendMouseButtonEvent(cx, cy, 1, false, game, 1)
 	end)
 
@@ -507,7 +452,6 @@ local function attemptSubmit()
 	if not isActionButtonReady(button) then return end
 
 	lastSubmitAttempt = now
-	-- Try firing the Lua connections first, if that fails, use mouse click
 	if not fireButtonViaConnections(button) then
 		fireButtonViaMouse(button)
 	end
@@ -548,7 +492,6 @@ RunService.RenderStepped:Connect(function()
 		
 		if tick() - skillCheckSeenAt >= AUTO_GEN_CONFIG.CHECK_GRACE then
 			if isRepairing() then
-				-- FORCE UNLOCK CAMERA if the game tried to lock it for the skill check
 				if Camera.CameraType == Enum.CameraType.Scriptable then
 					Camera.CameraType = Enum.CameraType.Custom
 				end
@@ -587,7 +530,6 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- Auto Generator UI registration → Main tab
 Tabs.MainTab:Toggle({
 	Title = "Auto Generator",
 	Desc  = "Auto-locks the skill-check arrow and auto-submits when repairing",
@@ -598,7 +540,6 @@ Tabs.MainTab:Toggle({
 	end,
 })
 
--- Emergency camera unfreeze button
 Tabs.MainTab:Button({
 	Title = "Fix Camera",
 	Desc  = "Manually unfreeze the camera if it ever gets stuck",
@@ -616,9 +557,6 @@ Tabs.MainTab:Button({
 		autogenLog("Camera reset requested.")
 	end,
 })
-
-autogenLog("Auto Generator loaded.")
-autogenLog("Arrow lock runs passively. Enable the toggle to auto-submit.")
 
 --=========================  PLAYER TAB  ===================================
 Tabs.PlayerTab:Toggle({
@@ -661,7 +599,8 @@ local function refreshResultsList()
 	local names = {}
 	for model, data in pairs(tracked) do
 		local scriptName = data.scriptName or "?"
-		table.insert(names, "• " .. model.Name .. "  (" .. scriptName .. ")")
+		local prefix = (model == currentKillerModel) and "[KILLER] " or "• "
+		table.insert(names, prefix .. model.Name .. "  (" .. scriptName .. ")")
 	end
 
 	if #names == 0 then
@@ -706,16 +645,6 @@ Tabs.ScannerTab:Button({
 				setStatus("Scanning... nothing yet", Grey)
 			end
 		end)
-	end,
-})
-
-Tabs.ScannerTab:Button({
-	Title = "Clear Highlights",
-	Desc  = "Remove all current ESP markers",
-	Callback = function()
-		clearESP()
-		refreshResultsList()
-		setStatus("Cleared", Grey)
 	end,
 })
 
@@ -799,11 +728,11 @@ Tabs.CustomizerTab:Slider({
 task.spawn(function()
 	while true do
 		if autoScan then
-			task.wait(next(tracked) == nil and CONFIG.ScanInterval or CONFIG.ScanInterval * 2)
+			task.wait(CONFIG.ScanInterval * 2)
 			fullScan()
 			refreshResultsList()
 		else
-			task.wait(0.5)
+			task.wait(1)
 		end
 	end
 end)
