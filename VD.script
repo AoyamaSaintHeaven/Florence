@@ -1,7 +1,7 @@
 local RunService = game:GetService("RunService")
 --[[
 
-    WindUI Example (wip) — with Killerost Scanner
+    WindUI Example (wip) — with Killerost Scanner + Auto Generator
 
 ]]
 
@@ -195,14 +195,14 @@ local CONFIG = {
 	ScanInterval        = 3,
 	Debounce            = 0.6,
 	Fill                = Color3.fromRGB(255, 45, 45),
-	Outline             = Color3.fromRGB(255, 45, 45), -- Now synced with Fill
+	Outline             = Color3.fromRGB(255, 45, 45),
 	FillTransparency    = 0.45,
 	OutlineTransparency = 0,
 }
 
 --=========================  SCAN CORE  ====================================
 
-local tracked    = {}     -- [model] = { highlight, scriptName }
+local tracked    = {}
 local autoScan   = true
 local espEnabled = true
 
@@ -270,13 +270,12 @@ local function setESPEnabled(state)
 	end
 end
 
--- Combined function to update both Fill and Outline
 local function applyColor(color)
 	CONFIG.Fill = color
 	CONFIG.Outline = color
 	for _, data in pairs(tracked) do
-		if data.highlight then 
-			data.highlight.FillColor = color 
+		if data.highlight then
+			data.highlight.FillColor = color
 			data.highlight.OutlineColor = color
 		end
 	end
@@ -360,6 +359,10 @@ Workspace.ChildAdded:Connect(queueRescan)
 --==========================================================================
 
 local Tabs = {
+	MainTab       = Window:Tab({
+		Title = "Main",
+		Icon  = "121572094465765",
+	}),
 	PlayerTab     = Window:Tab({
 		Title = "Players",
 		Icon  = "121572094465765",
@@ -373,6 +376,249 @@ local Tabs = {
 		Icon  = "121572094465765",
 	}),
 }
+
+--==========================================================================
+--  AUTO GENERATOR  (Camera-Safe Mobile Fix)
+--==========================================================================
+
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer          = Players.LocalPlayer
+local PlayerGui            = LocalPlayer:WaitForChild("PlayerGui")
+local Camera               = workspace.CurrentCamera
+
+local AUTO_GEN_CONFIG = {
+	LOCK_OFFSET     = 105,
+	SUBMIT_DELAY    = 0.15,
+	STARTUP_GRACE   = 8.0,    -- Give the game 8 seconds to fully load before engaging
+	CHECK_GRACE     = 0.15,   
+	MOUSE_HOLD      = 0.05,   
+}
+
+local autoSubmitEnabled  = false
+local isSkillCheckActive = false
+local lastSubmitAttempt  = 0
+local submitInProgress   = false
+local skillCheckSeenAt   = 0
+local gameReadyAt        = 0
+
+local function autogenLog(message, isError)
+	print((isError and "[ERROR] " or "[INFO] ") .. tostring(message))
+end
+
+-- Player must have a spawned, alive character
+local function isPlayerReady()
+	local char = LocalPlayer.Character
+	if not char then return false end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return false end
+	return char:FindFirstChild("HumanoidRootPart") ~= nil
+end
+
+task.spawn(function()
+	while not isPlayerReady() do task.wait(0.25) end
+	task.wait(1) -- Wait an extra second after spawn
+	gameReadyAt = tick()
+	autogenLog("Player ready. Auto Generator armed.")
+end)
+
+local function withinStartupGrace()
+	if gameReadyAt == 0 then return true end
+	return (tick() - gameReadyAt) < AUTO_GEN_CONFIG.STARTUP_GRACE
+end
+
+local function isRepairing()
+	local progressGui = PlayerGui:FindFirstChild("ProgressPromptGui")
+	if not progressGui then return false end
+
+	local frame = progressGui:FindFirstChild("Frame")
+	if frame and frame:IsA("GuiObject") and frame.Visible then return true end
+
+	local oldFrame = progressGui:FindFirstChild("oldFrame")
+	if oldFrame and oldFrame:IsA("GuiObject") and oldFrame.Visible then return true end
+
+	return false
+end
+
+local function findActionButton()
+	local survivorMob = PlayerGui:FindFirstChild("Survivor-mob")
+	if not survivorMob then return nil end
+	local controls = survivorMob:FindFirstChild("Controls")
+	if not controls then return nil end
+	return controls:FindFirstChild("action")
+end
+
+local function isActionButtonReady(button)
+	if not button or not button:IsA("GuiButton") then return false end
+	if not button.Visible or button.AbsoluteSize.X <= 0 then return false end
+	return true
+end
+
+-- 1. Fire connections directly (Safe. Does not touch the screen/camera).
+local function fireButtonViaConnections(button)
+	if not button or not getconnections then return false end
+	local fired = false
+	for _, signalName in ipairs({ "Activated", "MouseButton1Click", "MouseButton1Down" }) do
+		local signal = button[signalName]
+		if signal then
+			local ok, connections = pcall(getconnections, signal)
+			if ok and connections then
+				for _, connection in ipairs(connections) do
+					if connection.Enabled then
+						if pcall(function() connection:Fire() end) then
+							fired = true
+						end
+					end
+				end
+			end
+		end
+	end
+	return fired
+end
+
+-- 2. Fallback: Use a MOUSE click (Not a touch event!). 
+-- Mobile camera scripts ignore mouse clicks, so it won't lock the camera.
+local function fireButtonViaMouse(button)
+	if not button or not VirtualInputManager then return false end
+	local pos, size = button.AbsolutePosition, button.AbsoluteSize
+	local cx = pos.X + size.X / 2
+	local cy = pos.Y + size.Y / 2
+
+	local ok = pcall(function()
+		-- Button 1 (Left click), true = pressed down
+		VirtualInputManager:SendMouseButtonEvent(cx, cy, 1, true, game, 1)
+		task.wait(AUTO_GEN_CONFIG.MOUSE_HOLD)
+		-- Button 1 (Left click), false = released
+		VirtualInputManager:SendMouseButtonEvent(cx, cy, 1, false, game, 1)
+	end)
+
+	if ok then
+		autogenLog("Sent safe mouse click.")
+		return true
+	end
+	return false
+end
+
+local function attemptSubmit()
+	local now = tick()
+	if now - lastSubmitAttempt < AUTO_GEN_CONFIG.SUBMIT_DELAY then return end
+	if withinStartupGrace() or not isPlayerReady() or not isRepairing() then return end
+
+	local button = findActionButton()
+	if not isActionButtonReady(button) then return end
+
+	lastSubmitAttempt = now
+	-- Try firing the Lua connections first, if that fails, use mouse click
+	if not fireButtonViaConnections(button) then
+		fireButtonViaMouse(button)
+	end
+end
+
+local function getSkillCheckParts()
+	local gui = PlayerGui:FindFirstChild("SkillCheckPromptGui")
+		or PlayerGui:FindFirstChild("SkillCheckPromptGui-con")
+	if not gui or not gui.Enabled then return nil end
+	if gui:IsA("GuiObject") and not gui.Visible then return nil end
+
+	local check = gui:FindFirstChild("Check")
+	if not check then return nil end
+
+	local line = check:FindFirstChild("Line")
+	local goal = check:FindFirstChild("Goal")
+	if not (line and goal) then return nil end
+	if not (line:IsA("GuiObject") and goal:IsA("GuiObject")) then return nil end
+	if goal.AbsoluteSize.X <= 0 or goal.AbsoluteSize.Y <= 0 then return nil end
+
+	return line, goal
+end
+
+RunService.RenderStepped:Connect(function()
+	if not isPlayerReady() then
+		isSkillCheckActive = false
+		submitInProgress   = false
+		skillCheckSeenAt   = 0
+		return
+	end
+
+	local line, goal = getSkillCheckParts()
+
+	if line and goal then
+		if skillCheckSeenAt == 0 then
+			skillCheckSeenAt = tick()
+		end
+		
+		if tick() - skillCheckSeenAt >= AUTO_GEN_CONFIG.CHECK_GRACE then
+			if isRepairing() then
+				-- FORCE UNLOCK CAMERA if the game tried to lock it for the skill check
+				if Camera.CameraType == Enum.CameraType.Scriptable then
+					Camera.CameraType = Enum.CameraType.Custom
+				end
+
+				local target = goal.Rotation + AUTO_GEN_CONFIG.LOCK_OFFSET
+				if line.Rotation ~= target then
+					line.Rotation = target
+				end
+			end
+
+			if not isSkillCheckActive then
+				isSkillCheckActive = true
+				autogenLog("Skill-check detected. Arrow lock armed.")
+			end
+
+			if autoSubmitEnabled and not submitInProgress and not withinStartupGrace() and isRepairing() then
+				local button = findActionButton()
+				if isActionButtonReady(button) then
+					submitInProgress = true
+					task.spawn(function()
+						task.wait(AUTO_GEN_CONFIG.SUBMIT_DELAY)
+						attemptSubmit()
+						task.wait(AUTO_GEN_CONFIG.SUBMIT_DELAY)
+						submitInProgress = false
+					end)
+				end
+			end
+		end
+	else
+		if isSkillCheckActive then
+			isSkillCheckActive = false
+			autogenLog("Skill-check ended.")
+		end
+		submitInProgress = false
+		skillCheckSeenAt = 0
+	end
+end)
+
+-- Auto Generator UI registration → Main tab
+Tabs.MainTab:Toggle({
+	Title = "Auto Generator",
+	Desc  = "Auto-locks the skill-check arrow and auto-submits when repairing",
+	Value = false,
+	Callback = function(state)
+		autoSubmitEnabled = state
+		autogenLog("Auto Generator " .. (state and "ENABLED" or "DISABLED") .. ".")
+	end,
+})
+
+-- Emergency camera unfreeze button
+Tabs.MainTab:Button({
+	Title = "Fix Camera",
+	Desc  = "Manually unfreeze the camera if it ever gets stuck",
+	Callback = function()
+		local char = LocalPlayer.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		pcall(function() Camera.CameraType = Enum.CameraType.Custom end)
+		if hum then
+			pcall(function() Camera.CameraSubject = hum end)
+		end
+		task.wait(0.1)
+		if hum then
+			pcall(function() Camera.CameraSubject = hum end)
+		end
+		autogenLog("Camera reset requested.")
+	end,
+})
+
+autogenLog("Auto Generator loaded.")
+autogenLog("Arrow lock runs passively. Enable the toggle to auto-submit.")
 
 --=========================  PLAYER TAB  ===================================
 Tabs.PlayerTab:Toggle({
@@ -481,7 +727,6 @@ Tabs.CustomizerTab:Section({
 	TextSize = 17,
 })
 
--- Single colorpicker for BOTH Fill and Outline
 Tabs.CustomizerTab:Colorpicker({
 	Title = "ESP Color",
 	Desc  = "Changes both Fill and Outline colors",
