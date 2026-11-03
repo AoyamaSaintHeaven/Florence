@@ -63,6 +63,83 @@ local Window = WindUI:CreateWindow({
 	},
 })
 
+--==========================================================================
+--  FORCED UI LAYOUT OVERRIDE (Bypassing WindUI's default layout)
+--==========================================================================
+task.spawn(function()
+	while task.wait(0.2) do
+		local gui = game:GetService("CoreGui"):FindFirstChild("WindUI") 
+			or game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("WindUI")
+		
+		if gui then
+			local topbar = gui:FindFirstChild("Topbar", true)
+			if topbar then
+				-- 1. Destroy the layout that forces everything to the left
+				local layout = topbar:FindFirstChildOfClass("UIListLayout")
+				if layout then layout:Destroy() end
+
+				-- 2. Move Title and Icon to the TOP LEFT
+				local icon = topbar:FindFirstChild("Icon", true)
+				if icon then
+					icon.AnchorPoint = Vector2.new(0, 0.5)
+					icon.Position = UDim2.new(0, 15, 0.5, 0)
+					if icon.Parent ~= topbar and not icon.Parent:IsA("ScreenGui") then
+						icon.Parent.AnchorPoint = Vector2.new(0, 0.5)
+						icon.Parent.Position = UDim2.new(0, 15, 0.5, 0)
+					end
+				end
+
+				local title = topbar:FindFirstChild("Title", true)
+				if title then
+					title.AnchorPoint = Vector2.new(0, 0.5)
+					title.Position = UDim2.new(0, 50, 0.5, 0)
+					title.TextXAlignment = Enum.TextXAlignment.Left
+					if title.Parent ~= topbar and not title.Parent:IsA("ScreenGui") then
+						title.Parent.AnchorPoint = Vector2.new(0, 0.5)
+						title.Parent.Position = UDim2.new(0, 50, 0.5, 0)
+					end
+				end
+
+				-- 3. Move Mac Buttons to TOP RIGHT, Make Bigger, Add Distance
+				for _, frame in pairs(topbar:GetDescendants()) do
+					if frame:IsA("Frame") then
+						local btnCount = 0
+						for _, child in pairs(frame:GetChildren()) do
+							if child:IsA("TextButton") or child:IsA("ImageButton") then
+								btnCount = btnCount + 1
+							end
+						end
+						
+						-- If we found the frame with the 3 Mac buttons
+						if btnCount == 3 then
+							frame.AnchorPoint = Vector2.new(1, 0.5)
+							frame.Position = UDim2.new(1, -15, 0.5, 0)
+							
+							local cLayout = frame:FindFirstChildOfClass("UIListLayout")
+							if not cLayout then
+								cLayout = Instance.new("UIListLayout")
+								cLayout.Parent = frame
+							end
+							
+							cLayout.FillDirection = Enum.FillDirection.Horizontal
+							cLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+							cLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+							cLayout.Padding = UDim.new(0, 12) -- Distance between buttons
+							
+							for _, btn in pairs(frame:GetChildren()) do
+								if btn:IsA("TextButton") or btn:IsA("ImageButton") then
+									btn.Size = UDim2.fromOffset(22, 22) -- Bigger buttons
+								end
+							end
+							break
+						end
+					end
+				end
+			end
+		end
+	end
+end)
+
 -- */  Tags  /* --
 do
 	Window:Tag({
@@ -82,7 +159,7 @@ local Blue = Color3.fromHex("#257AF7")
 local Red = Color3.fromHex("#EF4F1D")
 
 --==========================================================================
---  KILLEROST SCANNER  —  Optimized for Mobile + Killer Change Detection
+--  KILLEROST SCANNER  —  Fully Cached (Zero Lag) + Killer Change Detection
 --==========================================================================
 
 local Players   = cloneref(game:GetService("Players"))
@@ -92,7 +169,6 @@ local Workspace = cloneref(game:GetService("Workspace"))
 local CONFIG = {
 	Keyword             = "killerost",
 	ScanInterval        = 10,   
-	Debounce            = 1.5,  
 	Fill                = Color3.fromRGB(255, 45, 45),
 	Outline             = Color3.fromRGB(255, 45, 45),
 	FillTransparency    = 0.45,
@@ -101,11 +177,14 @@ local CONFIG = {
 
 --=========================  SCAN CORE  ====================================
 
-local tracked    = {}
-local knownKillerScripts = {} -- CACHE: Remembers scripts that match, even if moved
-local autoScan   = true
-local espEnabled = true
-local currentKillerModel = nil -- Tracks the active killer
+local tracked            = {}
+local scannedScripts     = {} -- CACHE: Remembers scripts we already checked to prevent lag
+local knownKillerScripts = {} -- CACHE: Remembers scripts that matched the keyword
+local espEnabled         = true
+local currentKillerModel = nil 
+
+-- Forward declaration so scanner can update UI
+local refreshResultsList
 
 local function getScriptText(obj)
 	local parts = { obj.Name, obj.Parent and obj.Parent.Name or "" }
@@ -118,41 +197,8 @@ local function getScriptText(obj)
 			local ok2, bc = pcall(getscriptbytecode, obj)
 			if ok2 and type(bc) == "string" then parts[#parts + 1] = bc end
 		end
-		if getsenv then
-			local ok3, env = pcall(getsenv, obj)
-			if ok3 and type(env) == "table" then
-				for k in pairs(env) do parts[#parts + 1] = tostring(k) end
-			end
-		end
 	end
 	return table.concat(parts, "\n")
-end
-
-local function isHumanoidModel(inst)
-	return inst:IsA("Model") and inst:FindFirstChildOfClass("Humanoid") ~= nil
-end
-
-local function scanModelForKeyword(model)
-	if tracked[model] then return nil end
-	
-	for _, d in ipairs(model:GetDescendants()) do
-		if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ModuleScript") then
-			-- If we ALREADY know this is a killer script (e.g. game moved it), instantly flag it
-			if knownKillerScripts[d] then
-				return d
-			end
-			
-			-- If it's a new script, scan it
-			if not knownKillerScripts[d] then
-				local text = getScriptText(d)
-				if text ~= "" and string.find(string.lower(text), CONFIG.Keyword, 1, true) then
-					knownKillerScripts[d] = true
-					return d
-				end
-			end
-		end
-	end
-	return nil
 end
 
 local function applyESP(model, scriptObj)
@@ -174,8 +220,6 @@ local function applyESP(model, scriptObj)
 	-- DETECT KILLER CHANGE
 	if currentKillerModel ~= model then
 		currentKillerModel = model
-		
-		-- If the UI is ready, update the status and send a notification
 		if Window then
 			Window:Notify({
 				Title = "Killer Detected!",
@@ -185,13 +229,70 @@ local function applyESP(model, scriptObj)
 			})
 		end
 	end
+
+	if refreshResultsList then refreshResultsList() end
 end
 
-local function clearESP()
-	for model, data in pairs(tracked) do
-		if data.highlight then data.highlight:Destroy() end
-		tracked[model] = nil
+local function scanModelForKeyword(model)
+	if tracked[model] then return nil end
+	if not model:FindFirstChildOfClass("Humanoid") then return nil end
+	
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ModuleScript") then
+			-- If we already know this is a killer script
+			if knownKillerScripts[d] then
+				return d
+			end
+			
+			-- If we haven't scanned this script yet, scan it
+			if not scannedScripts[d] then
+				scannedScripts[d] = true
+				local text = getScriptText(d)
+				if text ~= "" and string.find(string.lower(text), CONFIG.Keyword, 1, true) then
+					knownKillerScripts[d] = true
+					return d
+				end
+			end
+		end
 	end
+	return nil
+end
+
+local function fullScan()
+	local found = 0
+	local count = 0
+
+	local ok, err = pcall(function()
+		for _, obj in ipairs(Workspace:GetDescendants()) do
+			if obj:IsA("Model") then
+				count = count + 1
+				-- ANTI-LAG: Pause for a frame every 50 models
+				if count % 50 == 0 then
+					task.wait()
+				end
+
+				local hit = scanModelForKeyword(obj)
+				if hit then
+					found += 1
+					applyESP(obj, hit)
+				end
+			end
+		end
+	end)
+
+	-- Cleanup missing killers
+	for model, data in pairs(tracked) do
+		if not model.Parent or not model:FindFirstChildOfClass("Humanoid") then
+			if data.highlight then data.highlight:Destroy() end
+			tracked[model] = nil
+			if model == currentKillerModel then
+				currentKillerModel = nil 
+			end
+		end
+	end
+
+	if refreshResultsList then refreshResultsList() end
+	return found
 end
 
 local function setESPEnabled(state)
@@ -226,85 +327,6 @@ local function applyOutlineAlpha(v)
 	end
 end
 
---=========================  FULL SCAN  ====================================
-local scanning = false
-local foundCount = 0
-
-local function fullScan()
-	if scanning then return 0 end
-	scanning = true
-
-	local found = 0
-	local count = 0
-	local foundKillerModel = nil
-
-	local ok, err = pcall(function()
-		for _, obj in ipairs(Workspace:GetDescendants()) do
-			if obj:IsA("Model") then
-				count = count + 1
-				if count % 50 == 0 then
-					task.wait() -- Anti-lag frame yield
-				end
-
-				if isHumanoidModel(obj) then
-					local hit = scanModelForKeyword(obj)
-					if hit then
-						found += 1
-						applyESP(obj, hit)
-						foundKillerModel = obj
-					end
-				end
-			end
-		end
-	end)
-
-	-- Check if the old killer is still valid
-	local killerStillExists = false
-	for model, data in pairs(tracked) do
-		if not model.Parent or not model:FindFirstChildOfClass("Humanoid") then
-			if data.highlight then data.highlight:Destroy() end
-			tracked[model] = nil
-			if model == currentKillerModel then
-				currentKillerModel = nil -- Killer left or died
-			end
-		elseif model == currentKillerModel then
-			killerStillExists = true
-		end
-	end
-
-	-- If the killer was removed and we found a new one, trigger a change
-	if not killerStillExists and foundKillerModel then
-		currentKillerModel = foundKillerModel
-	end
-
-	foundCount = found
-
-	if not ok then
-		warn("[KillerostScanner] " .. tostring(err))
-	end
-
-	scanning = false
-	return found
-end
-
---=========================  AUTO RE-SCAN  =================================
-local queued = false
-local function queueRescan()
-	if not autoScan or queued then return end
-	queued = true
-	task.delay(CONFIG.Debounce, function()
-		queued = false
-		if autoScan then fullScan() end
-	end)
-end
-
-Workspace.DescendantAdded:Connect(function(inst)
-	if inst:IsA("Script") or inst:IsA("LocalScript") or inst:IsA("ModuleScript") or inst:IsA("Model") then
-		queueRescan()
-	end
-end)
-Workspace.DescendantRemoving:Connect(queueRescan)
-
 --==========================================================================
 --                              UI TABS
 --==========================================================================
@@ -318,14 +340,6 @@ local Tabs = {
 		Title = "Players",
 		Icon  = "121572094465765",
 	}),
-	ScannerTab    = Window:Tab({
-		Title = "Scanner",
-		Icon  = "121572094465765",
-	}),
-	CustomizerTab = Window:Tab({
-		Title = "ESP Customizer",
-		Icon  = "121572094465765",
-	}),
 }
 
 --==========================================================================
@@ -335,7 +349,6 @@ local Tabs = {
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer          = Players.LocalPlayer
 local PlayerGui            = LocalPlayer:WaitForChild("PlayerGui")
-local Camera               = workspace.CurrentCamera
 
 local AUTO_GEN_CONFIG = {
 	LOCK_OFFSET     = 105,
@@ -431,9 +444,9 @@ local function fireButtonViaMouse(button)
 	local cy = pos.Y + size.Y / 2
 
 	local ok = pcall(function()
-		VirtualInputManager:SendMouseButtonEvent(cx, cy, 1, true, game, 1)
+		VirtualInputManager:SendMouseButtonEvent(cx, cy, 1, true, workspace, 1)
 		task.wait(AUTO_GEN_CONFIG.MOUSE_HOLD)
-		VirtualInputManager:SendMouseButtonEvent(cx, cy, 1, false, game, 1)
+		VirtualInputManager:SendMouseButtonEvent(cx, cy, 1, false, workspace, 1)
 	end)
 
 	if ok then
@@ -492,10 +505,6 @@ RunService.RenderStepped:Connect(function()
 		
 		if tick() - skillCheckSeenAt >= AUTO_GEN_CONFIG.CHECK_GRACE then
 			if isRepairing() then
-				if Camera.CameraType == Enum.CameraType.Scriptable then
-					Camera.CameraType = Enum.CameraType.Custom
-				end
-
 				local target = goal.Rotation + AUTO_GEN_CONFIG.LOCK_OFFSET
 				if line.Rotation ~= target then
 					line.Rotation = target
@@ -546,34 +555,27 @@ Tabs.MainTab:Button({
 	Callback = function()
 		local char = LocalPlayer.Character
 		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		pcall(function() Camera.CameraType = Enum.CameraType.Custom end)
+		local cam = workspace.CurrentCamera
+		pcall(function() cam.CameraType = Enum.CameraType.Custom end)
 		if hum then
-			pcall(function() Camera.CameraSubject = hum end)
+			pcall(function() cam.CameraSubject = hum end)
 		end
 		task.wait(0.1)
 		if hum then
-			pcall(function() Camera.CameraSubject = hum end)
+			pcall(function() cam.CameraSubject = hum end)
 		end
 		autogenLog("Camera reset requested.")
 	end,
 })
 
---=========================  PLAYER TAB  ===================================
-Tabs.PlayerTab:Toggle({
-	Title = "Noclip",
-	Desc  = "Pass through the Walls",
-	Value = false,
-	Callback = function(state)
-		-- functions
-	end,
-})
+--==========================================================================
+--  PLAYERS TAB (Scanner + ESP Customizer merged)
+--==========================================================================
 
---=========================  SCANNER TAB  ==================================
-
-local statusParagraph = Tabs.ScannerTab:Paragraph({
-	Title = "Status",
-	Desc  = "Idle...",
-	Color = Grey,
+local statusParagraph = Tabs.PlayerTab:Paragraph({
+	Title = "Scanner Status",
+	Desc  = "Scanning (Optimized)...",
+	Color = Green,
 	Image = "rbxassetid://121572094465765",
 	ImageSize = 24,
 	Locked = false,
@@ -586,7 +588,7 @@ local function setStatus(text, color)
 	end
 end
 
-local resultsParagraph = Tabs.ScannerTab:Paragraph({
+local resultsParagraph = Tabs.PlayerTab:Paragraph({
 	Title = "Detected",
 	Desc  = "No matches yet.",
 	Color = Red,
@@ -595,7 +597,8 @@ local resultsParagraph = Tabs.ScannerTab:Paragraph({
 	Locked = false,
 })
 
-local function refreshResultsList()
+-- Link the forward declaration to the actual function
+function refreshResultsList()
 	local names = {}
 	for model, data in pairs(tracked) do
 		local scriptName = data.scriptName or "?"
@@ -610,7 +613,7 @@ local function refreshResultsList()
 	end
 end
 
-Tabs.ScannerTab:Toggle({
+Tabs.PlayerTab:Toggle({
 	Title = "ESP Highlight",
 	Desc  = "Show highlight on flagged models",
 	Value = true,
@@ -620,25 +623,13 @@ Tabs.ScannerTab:Toggle({
 	end,
 })
 
-Tabs.ScannerTab:Toggle({
-	Title = "Auto Rescan",
-	Desc  = "Re-scan whenever Workspace changes",
-	Value = true,
-	Callback = function(state)
-		autoScan = state
-		setStatus(state and "Auto-scan enabled" or "Auto-scan paused", state and Green or Grey)
-	end,
-})
-
-Tabs.ScannerTab:Button({
+Tabs.PlayerTab:Button({
 	Title = "Rescan Now",
 	Desc  = "Run a full scan immediately",
 	Callback = function()
 		setStatus("Manual scan...", Yellow)
 		task.spawn(function()
-			while scanning do task.wait(0.1) end
 			local n = fullScan()
-			refreshResultsList()
 			if n > 0 then
 				setStatus(("FOUND %d  •  %s"):format(n, os.date("%H:%M:%S")), Red)
 			else
@@ -648,15 +639,14 @@ Tabs.ScannerTab:Button({
 	end,
 })
 
---=========================  ESP CUSTOMIZER TAB  ===========================
-
-Tabs.CustomizerTab:Section({
-	Title = "Colors",
+-- ESP CUSTOMIZER SECTION (Now inside Player Tab)
+Tabs.PlayerTab:Section({
+	Title = "ESP Customizer",
 	TextXAlignment = "Left",
 	TextSize = 17,
 })
 
-Tabs.CustomizerTab:Colorpicker({
+Tabs.PlayerTab:Colorpicker({
 	Title = "ESP Color",
 	Desc  = "Changes both Fill and Outline colors",
 	Default = CONFIG.Fill,
@@ -667,7 +657,7 @@ Tabs.CustomizerTab:Colorpicker({
 	end,
 })
 
-Tabs.CustomizerTab:Button({
+Tabs.PlayerTab:Button({
 	Title = "Preset: Red",
 	Callback = function()
 		applyColor(Color3.fromRGB(255, 45, 45))
@@ -675,7 +665,7 @@ Tabs.CustomizerTab:Button({
 	end,
 })
 
-Tabs.CustomizerTab:Button({
+Tabs.PlayerTab:Button({
 	Title = "Preset: Green",
 	Callback = function()
 		applyColor(Color3.fromRGB(45, 220, 90))
@@ -683,7 +673,7 @@ Tabs.CustomizerTab:Button({
 	end,
 })
 
-Tabs.CustomizerTab:Button({
+Tabs.PlayerTab:Button({
 	Title = "Preset: Blue",
 	Callback = function()
 		applyColor(Color3.fromRGB(60, 130, 255))
@@ -691,7 +681,7 @@ Tabs.CustomizerTab:Button({
 	end,
 })
 
-Tabs.CustomizerTab:Button({
+Tabs.PlayerTab:Button({
 	Title = "Preset: Pink",
 	Callback = function()
 		applyColor(Color3.fromRGB(255, 90, 200))
@@ -699,13 +689,13 @@ Tabs.CustomizerTab:Button({
 	end,
 })
 
-Tabs.CustomizerTab:Section({
+Tabs.PlayerTab:Section({
 	Title = "Transparency",
 	TextXAlignment = "Left",
 	TextSize = 17,
 })
 
-Tabs.CustomizerTab:Slider({
+Tabs.PlayerTab:Slider({
 	Title = "Fill Transparency",
 	Desc  = "0% = solid  •  100% = invisible",
 	Value = { Min = 0, Max = 100, Default = math.floor(CONFIG.FillTransparency * 100 + 0.5) },
@@ -714,7 +704,7 @@ Tabs.CustomizerTab:Slider({
 	end,
 })
 
-Tabs.CustomizerTab:Slider({
+Tabs.PlayerTab:Slider({
 	Title = "Outline Transparency",
 	Desc  = "0% = solid  •  100% = invisible",
 	Value = { Min = 0, Max = 100, Default = math.floor(CONFIG.OutlineTransparency * 100 + 0.5) },
@@ -723,29 +713,23 @@ Tabs.CustomizerTab:Slider({
 	end,
 })
 
---=========================  AUTO UI REFRESH & BOOT  =======================
+--==========================================================================
+--  BACKGROUND SCANNER & BOOT
+--==========================================================================
 
+-- Runs every 10 seconds in the background. 
+-- Because of 'scannedScripts' cache, it skips everything it already checked, causing NO lag.
 task.spawn(function()
 	while true do
-		if autoScan then
-			task.wait(CONFIG.ScanInterval * 2)
-			fullScan()
-			refreshResultsList()
-		else
-			task.wait(1)
-		end
+		task.wait(CONFIG.ScanInterval)
+		fullScan()
 	end
 end)
 
-setStatus("Initial scan...", Yellow)
+-- Initial boot scan
 task.spawn(function()
+	task.wait(3) -- Give game 3 seconds to load character
 	fullScan()
-	refreshResultsList()
-	if foundCount > 0 then
-		setStatus(("FOUND %d  •  %s"):format(foundCount, os.date("%H:%M:%S")), Red)
-	else
-		setStatus("Watching workspace...", Grey)
-	end
 end)
 
-print("[KillerostScanner] WindUI edition loaded")
+print("[KillerostScanner] Optimized Edition loaded")
