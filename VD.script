@@ -696,8 +696,8 @@ end
 --==========================================================================
 
 local Win = WindStyle:CreateWindow({
-    Title = "FlorenceArgenty  |  Scott",
-    Subtitle = "v1.0",
+    Title = "Violence District",
+    Subtitle = "v1.5",
     Size = UDim2.fromOffset(580, 460),
     Background = "rbxassetid://79268589053692",
     Icon = "rbxassetid://79268589053692",
