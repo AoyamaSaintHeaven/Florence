@@ -120,7 +120,7 @@ function WindStyle:CreateWindow(opts)
         BackgroundColor3 = T.Bg, AutoButtonColor = false, Text = "",
     }, gui)
     -- pill width follows the text (icon 28 + paddings = 62), clamped so it never gets huge
-    local pillLabel = opts.PillText or ("Open " .. title)
+    local pillLabel = opts.PillText or ("🎃" .. title)
     local textW = 100
     pcall(function()
         textW = game:GetService("TextService"):GetTextSize(
