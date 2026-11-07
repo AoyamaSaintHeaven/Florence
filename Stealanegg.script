@@ -992,7 +992,7 @@ Tabs.PlayerTab:Toggle({
 
 -- ══════════════════════════════════════════════════════════════════
 --  FIELD EGG REPORT  —  card viewer inside the "Egg Area" tab
---  Click a card = instant TP to the egg → claim → instant TP to drop spot.
+--  Click a card = instant TP to the egg → descend → claim → instant TP to drop spot.
 --  Wrapped so a missing game module can never break the rest of the hub.
 -- ══════════════════════════════════════════════════════════════════
 do
@@ -1219,7 +1219,7 @@ do
 			end
 		end
 
-		-- ═══ FLIGHT (now instant TP) ═══
+		-- ═══ FLIGHT (instant TP with descend) ═══
 		-- Bumps flightId so every running flight thread/connection goes stale, then stops in place.
 		local function cancelActiveFlight()
 			app.flightId = app.flightId + 1
@@ -1354,11 +1354,21 @@ do
 				hrp.CFrame = CFrame.new(targetPos)
 			end)
 
+			-- ═══ DECEND (drop straight down onto the egg) ═══
 			task.spawn(function()
+				task.wait(0.1)
+				if not isCurrent() then return end
+
+				pcall(function()
+					hrp.AssemblyLinearVelocity  = Vector3.zero
+					hrp.AssemblyAngularVelocity = Vector3.zero
+					hrp.CFrame = CFrame.new(targetPos - Vector3.new(0, 3, 0))
+				end)
+
+				-- ═══ FIRE THE CLAIM REMOTE ═══
 				task.wait(0.15) -- let the server register your new position
 				if not isCurrent() then return end
 
-				-- ═══ CLAIM THE EGG ═══
 				pcall(function()
 					local Event = replicatedStorage:FindFirstChild("Packages")
 						and replicatedStorage.Packages:FindFirstChild("Networking")
@@ -1394,7 +1404,7 @@ do
 
 				setFlightState("Dropping…")
 
-				-- ═══ INSTANT TP TO DROP SPOT ═══
+				-- ═══ INSTANT TP TO DROP SPOT (Egg Area only) ═══
 				pcall(function()
 					hrp.AssemblyLinearVelocity  = Vector3.zero
 					hrp.AssemblyAngularVelocity = Vector3.zero
