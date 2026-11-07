@@ -603,7 +603,7 @@ local function startIntro()
     end
     local openCard,openScale=makeCard(150)
     mono(openCard,"⚡",34,GREEN,18,40)
-    local titleLbl=mono(openCard,"Violence District",20,GREEN_HEAD,64,26)
+    local titleLbl=mono(openCard,"Stean An Egg",20,GREEN_HEAD,64,26)
     local subLbl=mono(openCard,"> loading, please wait_",12,GREEN_TEXT,96,16)
     local loadCard,loadScale=makeCard(150)
     mono(loadCard,"> LOADING_SYSTEM",15,GREEN_HEAD,16,22)
@@ -616,7 +616,7 @@ local function startIntro()
     local hexLbl=mono(loadCard,"0x00",11,GREEN_TEXT,108,14,-150,120,Enum.TextXAlignment.Left)
     local pctLbl=mono(loadCard,"0%",11,GREEN_TEXT,108,14,30,120,Enum.TextXAlignment.Right)
     local t0=os.clock(); local loadShown,openShown=false,false
-    local titleText,subText="Violence District","> loading, please wait_"
+    local titleText,subText="Stean An Egg","> loading, please wait_"
     local titleThr,subThr=makeThresholds(titleText),makeThresholds(subText)
     local conn
     conn=RunService.Heartbeat:Connect(function(dt)
@@ -667,7 +667,7 @@ local finishIntro = startIntro()
 --// ============================================================
 --// WINDOW + TABS
 --// ============================================================
-local Win = WindStyle:CreateWindow({Title="Violence District",Subtitle="v1.5",Size=UDim2.fromOffset(580,460),Background="rbxassetid://79268589053692",Icon="rbxassetid://79268589053692",ToggleKey=Enum.KeyCode.RightShift})
+local Win = WindStyle:CreateWindow({Title="Stean An Egg",Subtitle="v1.5",Size=UDim2.fromOffset(580,460),Background="rbxassetid://79268589053692",Icon="rbxassetid://79268589053692",ToggleKey=Enum.KeyCode.RightShift})
 
 local PlayerTab  = Win:Tab("Players","rbxassetid://121572094465765")
 local EggAreaTab = Win:Tab("Egg Area","map")
@@ -1093,4 +1093,4 @@ WindowAuraPage:Slider({Title="Intensity",Desc="How strong the glow is",Min=10,Ma
 --// BOOT
 --// ============================================================
 finishIntro(function(dur) Win:Open(dur) end)
-print("[Violence District] loaded")
+print("[Stean An Egg] loaded")
