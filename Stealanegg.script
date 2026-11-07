@@ -992,7 +992,7 @@ Tabs.PlayerTab:Toggle({
 
 -- ══════════════════════════════════════════════════════════════════
 --  FIELD EGG REPORT  —  card viewer inside the "Egg Area" tab
---  Click a card = fly to the egg → claim → fly to drop spot.
+--  Click a card = instant TP to the egg → claim → instant TP to drop spot.
 --  Wrapped so a missing game module can never break the rest of the hub.
 -- ══════════════════════════════════════════════════════════════════
 do
@@ -1014,7 +1014,6 @@ do
 		local GUI_NAME         = "PotentEggReport"
 		local CARD_W, CARD_H   = 120, 170
 		local MAX_CARDS        = 120   -- every card is a handful of GUI objects, keep this modest
-		local FLIGHT_SPEED     = 280
 		local REFRESH_INTERVAL = 2
 		local DROP_POS         = Vector3.new(527.4, 71.7, -357.8)
 		local ROTATION_SPEED   = 45    -- degrees per second
@@ -1210,7 +1209,7 @@ do
 			return not app.destroyed
 		end
 
-		-- shows "Flying…" / "Dropping…" on whichever card currently represents the active egg
+		-- shows "Teleporting…" / "Dropping…" on whichever card currently represents the active egg
 		local function setFlightState(state)
 			app.activeState = state
 			local lbl = app.activeUid and app.stateLabels[app.activeUid]
@@ -1220,7 +1219,7 @@ do
 			end
 		end
 
-		-- ═══ FLIGHT ═══
+		-- ═══ FLIGHT (now instant TP) ═══
 		-- Bumps flightId so every running flight thread/connection goes stale, then stops in place.
 		local function cancelActiveFlight()
 			app.flightId = app.flightId + 1
@@ -1346,128 +1345,69 @@ do
 			end
 
 			app.activeUid = entry.uid
-			setFlightState("Flying…")
+			setFlightState("Teleporting…")
 
-			local bv = Instance.new("BodyVelocity")
-			bv.Name = "PotentBodyVelocity"
-			bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
-			bv.Velocity = Vector3.new(0, 0, 0)
-			bv.Parent = hrp
+			-- ═══ INSTANT TP TO EGG ═══
+			pcall(function()
+				hrp.AssemblyLinearVelocity  = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
+				hrp.CFrame = CFrame.new(targetPos)
+			end)
 
-			local function characterDead()
-				return not character or not character.Parent or not hrp.Parent or humanoid.Health <= 0
-			end
-
-			-- Keep tracking the egg while flying: if it moves (dropped / carried), the target follows it.
-			local arrived = false
 			task.spawn(function()
-				while isCurrent() and not arrived do
-					task.wait(0.5)
-					if not isCurrent() or arrived then break end
-					local p = livePosition(entry.uid)
-					if p and (p - targetPos).Magnitude > 2 then
-						targetPos = p
+				task.wait(0.15) -- let the server register your new position
+				if not isCurrent() then return end
+
+				-- ═══ CLAIM THE EGG ═══
+				pcall(function()
+					local Event = replicatedStorage:FindFirstChild("Packages")
+						and replicatedStorage.Packages:FindFirstChild("Networking")
+						and replicatedStorage.Packages.Networking:FindFirstChild("RF/EggWorld/AskFieldEggCarry")
+
+					if Event then
+						Event:InvokeServer({ Uid = entry.uid })
+						print("[Potent] Successfully claimed egg after TP, UID:", entry.uid)
+					else
+						warn("[Potent] Remote RF/EggWorld/AskFieldEggCarry not found!")
 					end
-				end
-			end)
+				end)
 
-			local connection
-			connection = runService.Heartbeat:Connect(function()
-				if app.flightId ~= myId then
-					connection:Disconnect()
-					return
+				task.wait(0.15)
+				if not isCurrent() then return end
+
+				-- ═══ CHECK IF WE ACTUALLY GOT THE EGG ═══
+				local playerGui = localPlayer:FindFirstChild("PlayerGui")
+				local dropGui = playerGui and playerGui:FindFirstChild("DropHeldEgg")
+				local isDropGuiActive = false
+
+				if dropGui then
+					if dropGui:IsA("ScreenGui") and dropGui.Enabled then isDropGuiActive = true end
+					if dropGui:IsA("GuiObject") and dropGui.Visible then isDropGuiActive = true end
+					if dropGui:IsA("BoolValue") and dropGui.Value then isDropGuiActive = true end
 				end
-				if not windowActive() or characterDead() then
+
+				if not isDropGuiActive then
 					cancelActiveFlight()
+					task.defer(function() updateList(true) end)
 					return
 				end
 
-				local currentPos = hrp.Position
-				local direction = targetPos - currentPos
+				setFlightState("Dropping…")
 
-				if direction.Magnitude < 4 then
-					arrived = true
-					bv.Velocity = Vector3.new(0, 0, 0)
-					hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-					hrp.CFrame = CFrame.new(targetPos)
+				-- ═══ INSTANT TP TO DROP SPOT ═══
+				pcall(function()
+					hrp.AssemblyLinearVelocity  = Vector3.zero
+					hrp.AssemblyAngularVelocity = Vector3.zero
+					hrp.CFrame = CFrame.new(DROP_POS)
+				end)
 
-					connection:Disconnect()
-					if app.activeFlight == connection then app.activeFlight = nil end
-
-					task.spawn(function()
-						task.wait(0.2)
-						if not isCurrent() then return end
-
-						pcall(function()
-							local Event = replicatedStorage:FindFirstChild("Packages")
-								and replicatedStorage.Packages:FindFirstChild("Networking")
-								and replicatedStorage.Packages.Networking:FindFirstChild("RF/EggWorld/AskFieldEggCarry")
-
-							if Event then
-								Event:InvokeServer({ Uid = entry.uid })
-								print("[Potent] Successfully claimed egg after arrival, UID:", entry.uid)
-							else
-								warn("[Potent] Remote RF/EggWorld/AskFieldEggCarry not found!")
-							end
-						end)
-
-						task.wait(0.1)
-						if not isCurrent() then return end
-
-						local playerGui = localPlayer:FindFirstChild("PlayerGui")
-						local dropGui = playerGui and playerGui:FindFirstChild("DropHeldEgg")
-						local isDropGuiActive = false
-
-						if dropGui then
-							if dropGui:IsA("ScreenGui") and dropGui.Enabled then isDropGuiActive = true end
-							if dropGui:IsA("GuiObject") and dropGui.Visible then isDropGuiActive = true end
-							if dropGui:IsA("BoolValue") and dropGui.Value then isDropGuiActive = true end
-						end
-
-						if not isDropGuiActive then
-							cancelActiveFlight()
-							task.defer(function() updateList(true) end)
-							return
-						end
-
-						setFlightState("Dropping…")
-
-						local dropConnection
-						dropConnection = runService.Heartbeat:Connect(function()
-							if app.flightId ~= myId then
-								dropConnection:Disconnect()
-								return
-							end
-							if not windowActive() or characterDead() then
-								cancelActiveFlight()
-								return
-							end
-
-							local cPos = hrp.Position
-							local dDirection = DROP_POS - cPos
-
-							if dDirection.Magnitude < 4 then
-								hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-								hrp.CFrame = CFrame.new(DROP_POS)
-								cancelActiveFlight()
-								task.defer(function() updateList(true) end)
-								return
-							end
-
-							bv.Velocity = dDirection.Unit * FLIGHT_SPEED
-							hrp.CFrame = CFrame.lookAt(cPos, DROP_POS)
-						end)
-
-						app.activeFlight = dropConnection
-					end)
-					return
-				end
-
-				bv.Velocity = direction.Unit * FLIGHT_SPEED
-				hrp.CFrame = CFrame.lookAt(currentPos, targetPos)
+				task.wait(0.2)
+				cancelActiveFlight()
+				task.defer(function() updateList(true) end)
 			end)
 
-			app.activeFlight = connection
+			-- Instant TP → no Heartbeat connection to store
+			app.activeFlight = nil
 		end
 
 		-- ═══ DATA ═══
@@ -1607,7 +1547,7 @@ do
 			incomeLabel.TextScaled = true
 			incomeLabel.Parent = card
 
-			-- flight state badge ("Flying…" / "Dropping…")
+			-- flight state badge ("Teleporting…" / "Dropping…")
 			local stateLabel = Instance.new("TextLabel")
 			stateLabel.ZIndex = 4
 			stateLabel.Size = UDim2.new(1, -10, 0, 16)
@@ -1678,7 +1618,7 @@ do
 
 				if not force and sig == app.signature then
 					if os.clock() >= app.statusUntil then
-						setStatus(string.format("showing %d / %d  •  tap a card to fly", shown, #entries))
+						setStatus(string.format("showing %d / %d  •  tap a card to teleport", shown, #entries))
 					end
 					return
 				end
@@ -1711,7 +1651,7 @@ do
 					if #filtered > MAX_CARDS then
 						setStatus(string.format("showing %d / %d matching  •  truncated", shown, #filtered))
 					else
-						setStatus(string.format("showing %d / %d  •  tap a card to fly", shown, #entries))
+						setStatus(string.format("showing %d / %d  •  tap a card to teleport", shown, #entries))
 					end
 				end
 			end)
