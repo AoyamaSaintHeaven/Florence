@@ -3390,9 +3390,112 @@ MainTab:Toggle({ Title = "Enable Laser Effect", Default = true, Callback = funct
 MainTab:Toggle({ Title = "Silent Aim Flashlight", Default = false, Callback = function(v) PistolConfig.Flash = v end })
 
 --==========================================================================
---  VISUAL TAB (MAP ESP)
+--  VISUAL TAB (MAP ESP & PLAYER ESP SETTINGS)
 --==========================================================================
 local VisualTab = Win:Tab("Visual", "rbxassetid://121572094465765")
+
+-- Player ESP Configuration
+local ESPConfig = {
+    Master = false,
+    Player = false,
+    Name = false,
+    Distance = false,
+    MaxDistance = 100,
+    PlayerColor = Color3.fromRGB(60, 255, 60)
+}
+
+-- Update ESP Loop
+local function UpdatePlayerESP()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local char = player.Character
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local localChar = LocalPlayer.Character
+            
+            if hum and root and hum.Health > 0 and localChar and localChar:FindFirstChild("HumanoidRootPart") then
+                local dist = (localChar.HumanoidRootPart.Position - root.Position).Magnitude
+                local isKiller = player.Team and player.Team.Name == "Killer"
+                
+                local shouldShow = false
+                local color = ESPConfig.PlayerColor
+                
+                if ESPConfig.Master and dist <= ESPConfig.MaxDistance then
+                    -- Only target Survivors now
+                    if not isKiller and ESPConfig.Player then
+                        shouldShow = true
+                    end
+                end
+                
+                if shouldShow then
+                    -- Highlight
+                    local hl = char:FindFirstChild("PlayerESP_Highlight")
+                    if not hl then
+                        hl = Instance.new("Highlight")
+                        hl.Name = "PlayerESP_Highlight"
+                        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        hl.Parent = char
+                    end
+                    hl.FillColor = color
+                    hl.OutlineColor = color
+                    hl.FillTransparency = 0.5
+                    hl.OutlineTransparency = 0
+                    
+                    -- Billboard
+                    if ESPConfig.Name or ESPConfig.Distance then
+                        local bb = char:FindFirstChild("PlayerESP_Billboard")
+                        if not bb then
+                            bb = Instance.new("BillboardGui")
+                            bb.Name = "PlayerESP_Billboard"
+                            bb.AlwaysOnTop = true
+                            bb.Size = UDim2.new(0, 200, 0, 50)
+                            bb.StudsOffset = Vector3.new(0, 3, 0)
+                            bb.Parent = char
+                            
+                            local txt = Instance.new("TextLabel")
+                            txt.Name = "ESPText"
+                            txt.BackgroundTransparency = 1
+                            txt.Size = UDim2.fromScale(1, 1)
+                            txt.Font = Enum.Font.GothamBold
+                            txt.TextSize = 14
+                            txt.TextStrokeTransparency = 0
+                            txt.Parent = bb
+                        end
+                        
+                        local txt = bb:FindFirstChild("ESPText")
+                        if txt then
+                            local textStr = ""
+                            if ESPConfig.Name then
+                                textStr = player.Name
+                            end
+                            if ESPConfig.Distance then
+                                if textStr ~= "" then textStr = textStr .. " " end
+                                textStr = textStr .. "[" .. math.floor(dist) .. "m]"
+                            end
+                            txt.Text = textStr
+                            txt.TextColor3 = color
+                        end
+                    else
+                        local bb = char:FindFirstChild("PlayerESP_Billboard")
+                        if bb then bb:Destroy() end
+                    end
+                else
+                    local hl = char:FindFirstChild("PlayerESP_Highlight")
+                    if hl then hl:Destroy() end
+                    local bb = char:FindFirstChild("PlayerESP_Billboard")
+                    if bb then bb:Destroy() end
+                end
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        UpdatePlayerESP()
+    end
+end)
 
 -- Map ESP Configuration
 local MapESPConfig = {
@@ -3402,7 +3505,7 @@ local MapESPConfig = {
     Window = false,
     Hook = false,
     Gate = false,
-    MaxDistance = 1000
+    MaxDistance = 5000
 }
 
 local MapESPColors = {
@@ -3512,14 +3615,16 @@ local function UpdateMapESP()
 
                     local hl = model:FindFirstChild("GEH")
                     if not hl then
-                        hl = Instance.new("Highlight")
+                        hl = Instance.new("BoxHandleAdornment")
                         hl.Name = "GEH"
+                        hl.Adornee = part
+                        hl.AlwaysOnTop = true
+                        hl.ZIndex = 5
+                        hl.Size = part.Size
                         hl.Parent = model
                     end
-                    hl.FillColor = color
-                    hl.OutlineColor = color
-                    hl.FillTransparency = 0.5
-                    hl.OutlineTransparency = 0
+                    hl.Color3 = color
+                    hl.Transparency = 0.5
 
                     if MapESPConfig.GeneratorName then
                         local text = progress >= 100 and "DONE" or (progress .. "%")
@@ -3553,15 +3658,16 @@ local function UpdateMapESP()
                     if MapESPConfig.Pallet then
                         local hl = pallet:FindFirstChild("PalletEH")
                         if not hl then
-                            hl = Instance.new("Highlight")
+                            hl = Instance.new("BoxHandleAdornment")
                             hl.Name = "PalletEH"
+                            hl.Adornee = basePart
+                            hl.AlwaysOnTop = true
+                            hl.ZIndex = 5
+                            hl.Size = basePart.Size
                             hl.Parent = pallet
                         end
-                        hl.Adornee = pallet
-                        hl.FillColor = MapESPColors.Pallet
-                        hl.OutlineColor = MapESPColors.Pallet
-                        hl.FillTransparency = 0.5
-                        hl.OutlineTransparency = 0
+                        hl.Color3 = MapESPColors.Pallet
+                        hl.Transparency = 0.5
                     else
                         local hl = pallet:FindFirstChild("PalletEH")
                         if hl then hl:Destroy() end
@@ -3586,14 +3692,14 @@ local function UpdateMapESP()
                         if not hl then
                             hl = Instance.new("BoxHandleAdornment")
                             hl.Name = "WindowEH"
-                            hl.Parent = window
+                            hl.Adornee = bottom
                             hl.AlwaysOnTop = true
                             hl.ZIndex = 5
+                            hl.Size = bottom.Size
+                            hl.Parent = window
                         end
-                        hl.Adornee = bottom
-                        hl.Size = bottom.Size
                         hl.Color3 = MapESPColors.Window
-                        hl.Transparency = 0.4
+                        hl.Transparency = 0.5
                     else
                         local hl = window:FindFirstChild("WindowEH")
                         if hl then hl:Destroy() end
@@ -3616,14 +3722,16 @@ local function UpdateMapESP()
                     if MapESPConfig.Hook then
                         local hl = hook:FindFirstChild("HookEH")
                         if not hl then
-                            hl = Instance.new("Highlight")
+                            hl = Instance.new("BoxHandleAdornment")
                             hl.Name = "HookEH"
+                            hl.Adornee = point
+                            hl.AlwaysOnTop = true
+                            hl.ZIndex = 5
+                            hl.Size = point.Size
                             hl.Parent = hook
                         end
-                        hl.FillColor = MapESPColors.Hook
-                        hl.OutlineColor = MapESPColors.Hook
-                        hl.FillTransparency = 0.5
-                        hl.OutlineTransparency = 0
+                        hl.Color3 = MapESPColors.Hook
+                        hl.Transparency = 0.5
                     else
                         local hl = hook:FindFirstChild("HookEH")
                         if hl then hl:Destroy() end
@@ -3646,15 +3754,16 @@ local function UpdateMapESP()
                     if MapESPConfig.Gate then
                         local hl = gate:FindFirstChild("GateEH")
                         if not hl then
-                            hl = Instance.new("Highlight")
+                            hl = Instance.new("BoxHandleAdornment")
                             hl.Name = "GateEH"
+                            hl.Adornee = basePart
+                            hl.AlwaysOnTop = true
+                            hl.ZIndex = 5
+                            hl.Size = basePart.Size
                             hl.Parent = gate
                         end
-                        hl.Adornee = gate
-                        hl.FillColor = MapESPColors.Gate
-                        hl.OutlineColor = MapESPColors.Gate
-                        hl.FillTransparency = 0.5
-                        hl.OutlineTransparency = 0
+                        hl.Color3 = MapESPColors.Gate
+                        hl.Transparency = 0.5
                     else
                         local hl = gate:FindFirstChild("GateEH")
                         if hl then hl:Destroy() end
@@ -3681,6 +3790,21 @@ task.spawn(function()
         ScanMap()
     end
 end)
+
+-- UI Bindings for Player ESP
+VisualTab:Section({ Title = "ESP Settings" })
+
+VisualTab:Toggle({ Title = "Enable ESP", Default = false, Callback = function(v) ESPConfig.Master = v end })
+VisualTab:Slider({ Title = "ESP Max Distance", Min = 50, Max = 2000, Default = 100, Callback = function(v) ESPConfig.MaxDistance = v end })
+
+VisualTab:Toggle({ Title = "Player ESP", Default = false, Callback = function(v) ESPConfig.Player = v end })
+VisualTab:Dropdown({ Title = "Warna Player ESP", Values = {"Green", "Red", "Blue", "White"}, Default = "Green", Callback = function(v) 
+    local map = { Green = Color3.fromRGB(60,255,60), Red = Color3.fromRGB(255,0,0), Blue = Color3.fromRGB(0,255,255), White = Color3.fromRGB(255,255,255) }
+    ESPConfig.PlayerColor = map[v] or Color3.fromRGB(60,255,60)
+end })
+
+VisualTab:Toggle({ Title = "ESP Name", Default = false, Callback = function(v) ESPConfig.Name = v end })
+VisualTab:Toggle({ Title = "ESP Distance", Default = false, Callback = function(v) ESPConfig.Distance = v end })
 
 -- UI Bindings for Map ESP
 VisualTab:Section({ Title = "Map ESP" })
