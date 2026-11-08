@@ -3002,6 +3002,7 @@ WindowAuraPage:Slider({
 --==========================================================================
 
 local CurrentCamera = workspace.CurrentCamera
+local laserPart = nil
 
 -- ||======================================================================||
 -- || CONFIGURATIONS                                                       ||
@@ -3014,7 +3015,8 @@ local AimbotConfig = {
     Smoothness = 0.5,
     Predict = 0.01,
     TargetPart = "Torso",
-    FOVTransparency = 0
+    FOVTransparency = 0,
+    Wallcheck = false -- Added Wallcheck to Survivor Aimbot
 }
 
 local PistolConfig = {
@@ -3052,6 +3054,18 @@ local function getTargetPart(character)
     else
         return character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso") or character:FindFirstChild("HumanoidRootPart")
     end
+end
+
+-- Helper to check if there is a clear line of sight to the target
+local function isTargetVisible(startPos, endPos, targetChar)
+    local dir = endPos - startPos
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    local filter = {LocalPlayer.Character}
+    if targetChar then table.insert(filter, targetChar) end
+    if laserPart then table.insert(filter, laserPart) end
+    rayParams.FilterDescendantsInstances = filter
+    return workspace:Raycast(startPos, dir.Unit * dir.Magnitude, rayParams) == nil
 end
 
 -- ||======================================================================||
@@ -3102,6 +3116,11 @@ local function getBestAimbotTarget()
                 if player.Team and player.Team.Name == "Killer" then
                     local dist = (root.Position - localRoot.Position).Magnitude
                     if dist <= AimbotConfig.MaxDist and dist < shortestDist then
+                        -- Added Wallcheck to Survivor Aimbot
+                        if AimbotConfig.Wallcheck and not isTargetVisible(localRoot.Position, targetPart.Position, player.Character) then
+                            continue
+                        end
+                        
                         local screenPos, onScreen = CurrentCamera:WorldToViewportPoint(targetPart.Position)
                         if onScreen then
                             local mag = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
@@ -3178,7 +3197,6 @@ end)
 -- ||======================================================================||
 local isHolding = false
 local isFlashlightHolding = false
-local laserPart = nil
 local ToF_FireRemote = nil
 
 pcall(function()
@@ -3195,17 +3213,6 @@ local function getGunObject()
         return RightArm:FindFirstChild("gun") or RightArm:FindFirstChild("EmperorGun") or ToF
     end
     return ToF
-end
-
-local function isTargetVisible(startPos, endPos, targetChar)
-    local dir = endPos - startPos
-    local rayParams = RaycastParams.new()
-    rayParams.FilterType = Enum.RaycastFilterType.Exclude
-    local filter = {LocalPlayer.Character}
-    if targetChar then table.insert(filter, targetChar) end
-    if laserPart then table.insert(filter, laserPart) end
-    rayParams.FilterDescendantsInstances = filter
-    return workspace:Raycast(startPos, dir.Unit * dir.Magnitude, rayParams) == nil
 end
 
 local function updateLaser(startPos, endPos)
@@ -3369,6 +3376,8 @@ MainTab:Slider({ Title = "Max Distance", Min = 50, Max = 1000, Default = 300, Ca
 MainTab:Slider({ Title = "Smoothness", Min = 0.1, Max = 1, Default = 0.5, Callback = function(v) AimbotConfig.Smoothness = v end })
 MainTab:Slider({ Title = "Predict Offset", Min = 0, Max = 0.1, Default = 0.01, Callback = function(v) AimbotConfig.Predict = v end })
 MainTab:Dropdown({ Title = "Target Part", Values = { "Torso", "Head", "Root" }, Default = "Torso", Callback = function(v) AimbotConfig.TargetPart = v end })
+-- Added Wallcheck to Survivor Aimbot UI
+MainTab:Toggle({ Title = "Wallcheck (Aimbot)", Default = false, Callback = function(v) AimbotConfig.Wallcheck = v end })
 
 MainTab:Section({ Title = "Silent Aim (Pistol)" })
 MainTab:Toggle({ Title = "Silent Aim Twist Of Fate", Default = false, Callback = function(v) PistolConfig.Enabled = v end })
@@ -3376,9 +3385,340 @@ MainTab:Toggle({ Title = "Predict Aim ToF", Default = false, Callback = function
 MainTab:Toggle({ Title = "Block aim Knocked", Default = false, Callback = function(v) PistolConfig.BlockKnocked = v end })
 MainTab:Toggle({ Title = "Block Peluru (TOF)", Default = false, Callback = function(v) PistolConfig.BlockBullet = v end })
 MainTab:Toggle({ Title = "Lock Aim (Twist Of Fate)", Default = false, Callback = function(v) PistolConfig.LockAim = v end })
-MainTab:Toggle({ Title = "Wallcheck", Default = false, Callback = function(v) PistolConfig.Wallcheck = v end })
+MainTab:Toggle({ Title = "Wallcheck (Silent Aim)", Default = false, Callback = function(v) PistolConfig.Wallcheck = v end })
 MainTab:Toggle({ Title = "Enable Laser Effect", Default = true, Callback = function(v) PistolConfig.Laser = v end })
 MainTab:Toggle({ Title = "Silent Aim Flashlight", Default = false, Callback = function(v) PistolConfig.Flash = v end })
+
+--==========================================================================
+--  VISUAL TAB (MAP ESP)
+--==========================================================================
+local VisualTab = Win:Tab("Visual", "rbxassetid://121572094465765")
+
+-- Map ESP Configuration
+local MapESPConfig = {
+    Generator = false,
+    GeneratorName = true,
+    Pallet = false,
+    Window = false,
+    Hook = false,
+    Gate = false,
+    MaxDistance = 1000
+}
+
+local MapESPColors = {
+    Generator = Color3.fromRGB(255, 255, 0),
+    GeneratorDone = Color3.fromRGB(0, 255, 0),
+    Pallet = Color3.fromRGB(60, 255, 255),
+    Hook = Color3.fromRGB(255, 105, 180),
+    Gate = Color3.fromRGB(255, 255, 255),
+    Window = Color3.fromRGB(60, 255, 255)
+}
+
+local MapObjects = {
+    Generators = {},
+    Hooks = {},
+    Gates = {},
+    Pallets = {},
+    Windows = {}
+}
+
+-- Function to scan the map for objects
+local function ScanMap()
+    table.clear(MapObjects.Generators)
+    table.clear(MapObjects.Hooks)
+    table.clear(MapObjects.Gates)
+    table.clear(MapObjects.Pallets)
+    table.clear(MapObjects.Windows)
+
+    local Map = workspace:FindFirstChild("Map")
+    if not Map then return end
+
+    for _, descendant in ipairs(Map:GetDescendants()) do
+        if descendant:IsA("Model") then
+            local name = string.lower(descendant.Name)
+            if name == "generator" then
+                local body = descendant:FindFirstChild("GeneratorBody") or descendant:FindFirstChildWhichIsA("BasePart")
+                if body then
+                    table.insert(MapObjects.Generators, {model = descendant, part = body})
+                end
+            elseif name == "hook" and descendant:FindFirstChild("HookPoint") then
+                table.insert(MapObjects.Hooks, descendant)
+            elseif name == "gate" and descendant:FindFirstChild("ExitLever") then
+                table.insert(MapObjects.Gates, descendant)
+            elseif name == "window" then
+                table.insert(MapObjects.Windows, descendant)
+            end
+        elseif descendant:IsA("BasePart") and descendant.Name == "PrimaryPartPallet" then
+            local parent = descendant.Parent
+            if parent and not table.find(MapObjects.Pallets, parent) then
+                table.insert(MapObjects.Pallets, parent)
+            end
+        end
+    end
+end
+
+-- Simple modern ESP builder for Generators
+local function CreateModernESP(part, guiName, data)
+    if not part then return end
+    local BillboardGui = part:FindFirstChild(guiName)
+    if not BillboardGui then
+        BillboardGui = Instance.new("BillboardGui")
+        BillboardGui.Name = guiName
+        BillboardGui.AlwaysOnTop = true
+        BillboardGui.Size = UDim2.new(0, 200, 0, 20)
+        BillboardGui.StudsOffset = Vector3.new(0, data.offsetY or 4, 0)
+        BillboardGui.Parent = part
+        
+        local TextLabel = Instance.new("TextLabel")
+        TextLabel.BackgroundTransparency = 1
+        TextLabel.Size = UDim2.fromScale(1, 1)
+        TextLabel.Font = Enum.Font.GothamBold
+        TextLabel.TextSize = 12
+        TextLabel.RichText = true
+        TextLabel.TextStrokeTransparency = 0
+        TextLabel.TextColor3 = Color3.new(1,1,1)
+        TextLabel.Parent = BillboardGui
+    end
+
+    local TextLabel = BillboardGui:FindFirstChild("TextLabel")
+    if TextLabel then
+        local colorHex = string.format("#%02X%02X%02X", math.floor(data.color.R*255), math.floor(data.color.G*255), math.floor(data.color.B*255))
+        TextLabel.Text = string.format("<font color=\"%s\">%s</font> <font color=\"#FF8000\">%s</font>", colorHex, data.name, data.info)
+    end
+end
+
+-- Function to update ESP visuals
+local function UpdateMapESP()
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    local camPos = cam.CFrame.Position
+
+    -- Generators
+    for _, gen in ipairs(MapObjects.Generators) do
+        local model = gen.model
+        local part = gen.part
+        if model and model.Parent and part and part.Parent then
+            local dist = (camPos - part.Position).Magnitude
+            if dist > MapESPConfig.MaxDistance then
+                local hl = model:FindFirstChild("GEH")
+                if hl then hl:Destroy() end
+                local txt = model:FindFirstChild("GE_Text")
+                if txt then txt:Destroy() end
+            else
+                if MapESPConfig.Generator then
+                    local progress = math.floor(model:GetAttribute("RepairProgress") or 0)
+                    local ratio = math.clamp(progress / 100, 0, 1)
+                    local color = MapESPColors.Generator:Lerp(MapESPColors.GeneratorDone, ratio)
+
+                    local hl = model:FindFirstChild("GEH")
+                    if not hl then
+                        hl = Instance.new("Highlight")
+                        hl.Name = "GEH"
+                        hl.Parent = model
+                    end
+                    hl.FillColor = color
+                    hl.OutlineColor = color
+                    hl.FillTransparency = 0.5
+                    hl.OutlineTransparency = 0
+
+                    if MapESPConfig.GeneratorName then
+                        local text = progress >= 100 and "DONE" or (progress .. "%")
+                        CreateModernESP(part, "GE_Text", {
+                            name = "GEN",
+                            info = text,
+                            color = color,
+                            offsetY = part.Size.Y / 2 + 1
+                        })
+                    end
+                else
+                    local hl = model:FindFirstChild("GEH")
+                    if hl then hl:Destroy() end
+                    local txt = model:FindFirstChild("GE_Text")
+                    if txt then txt:Destroy() end
+                end
+            end
+        end
+    end
+
+    -- Pallets
+    for _, pallet in ipairs(MapObjects.Pallets) do
+        if pallet and pallet.Parent then
+            local basePart = pallet:FindFirstChildWhichIsA("BasePart")
+            if basePart then
+                local dist = (camPos - basePart.Position).Magnitude
+                if dist > MapESPConfig.MaxDistance then
+                    local hl = pallet:FindFirstChild("PalletEH")
+                    if hl then hl:Destroy() end
+                else
+                    if MapESPConfig.Pallet then
+                        local hl = pallet:FindFirstChild("PalletEH")
+                        if not hl then
+                            hl = Instance.new("Highlight")
+                            hl.Name = "PalletEH"
+                            hl.Parent = pallet
+                        end
+                        hl.Adornee = pallet
+                        hl.FillColor = MapESPColors.Pallet
+                        hl.OutlineColor = MapESPColors.Pallet
+                        hl.FillTransparency = 0.5
+                        hl.OutlineTransparency = 0
+                    else
+                        local hl = pallet:FindFirstChild("PalletEH")
+                        if hl then hl:Destroy() end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Windows
+    for _, window in ipairs(MapObjects.Windows) do
+        if window and window.Parent then
+            local bottom = window:FindFirstChild("Bottom") or window:FindFirstChildWhichIsA("BasePart")
+            if bottom then
+                local dist = (camPos - bottom.Position).Magnitude
+                if dist > MapESPConfig.MaxDistance then
+                    local hl = window:FindFirstChild("WindowEH")
+                    if hl then hl:Destroy() end
+                else
+                    if MapESPConfig.Window then
+                        local hl = window:FindFirstChild("WindowEH")
+                        if not hl then
+                            hl = Instance.new("BoxHandleAdornment")
+                            hl.Name = "WindowEH"
+                            hl.Parent = window
+                            hl.AlwaysOnTop = true
+                            hl.ZIndex = 5
+                        end
+                        hl.Adornee = bottom
+                        hl.Size = bottom.Size
+                        hl.Color3 = MapESPColors.Window
+                        hl.Transparency = 0.4
+                    else
+                        local hl = window:FindFirstChild("WindowEH")
+                        if hl then hl:Destroy() end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Hooks
+    for _, hook in ipairs(MapObjects.Hooks) do
+        if hook and hook.Parent then
+            local point = hook:FindFirstChild("HookPoint") or hook:FindFirstChildWhichIsA("BasePart")
+            if point then
+                local dist = (camPos - point.Position).Magnitude
+                if dist > MapESPConfig.MaxDistance then
+                    local hl = hook:FindFirstChild("HookEH")
+                    if hl then hl:Destroy() end
+                else
+                    if MapESPConfig.Hook then
+                        local hl = hook:FindFirstChild("HookEH")
+                        if not hl then
+                            hl = Instance.new("Highlight")
+                            hl.Name = "HookEH"
+                            hl.Parent = hook
+                        end
+                        hl.FillColor = MapESPColors.Hook
+                        hl.OutlineColor = MapESPColors.Hook
+                        hl.FillTransparency = 0.5
+                        hl.OutlineTransparency = 0
+                    else
+                        local hl = hook:FindFirstChild("HookEH")
+                        if hl then hl:Destroy() end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Gates
+    for _, gate in ipairs(MapObjects.Gates) do
+        if gate and gate.Parent then
+            local basePart = gate:FindFirstChildWhichIsA("BasePart")
+            if basePart then
+                local dist = (camPos - basePart.Position).Magnitude
+                if dist > MapESPConfig.MaxDistance then
+                    local hl = gate:FindFirstChild("GateEH")
+                    if hl then hl:Destroy() end
+                else
+                    if MapESPConfig.Gate then
+                        local hl = gate:FindFirstChild("GateEH")
+                        if not hl then
+                            hl = Instance.new("Highlight")
+                            hl.Name = "GateEH"
+                            hl.Parent = gate
+                        end
+                        hl.Adornee = gate
+                        hl.FillColor = MapESPColors.Gate
+                        hl.OutlineColor = MapESPColors.Gate
+                        hl.FillTransparency = 0.5
+                        hl.OutlineTransparency = 0
+                    else
+                        local hl = gate:FindFirstChild("GateEH")
+                        if hl then hl:Destroy() end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Run map scanning and updating
+task.spawn(function()
+    task.wait(1) -- Give the map time to load
+    ScanMap()
+    while true do
+        task.wait(0.5) -- Update visuals
+        UpdateMapESP()
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(10) -- Rescan map periodically
+        ScanMap()
+    end
+end)
+
+-- UI Bindings for Map ESP
+VisualTab:Section({ Title = "Map ESP" })
+
+VisualTab:Toggle({ Title = "Generator ESP", Default = false, Callback = function(v) MapESPConfig.Generator = v end })
+VisualTab:Dropdown({ Title = "Warna Generator", Values = {"Yellow", "Green", "Red", "Cyan", "White"}, Default = "Yellow", Callback = function(v) 
+    local map = { Yellow = Color3.fromRGB(255,255,0), Green = Color3.fromRGB(0,255,0), Red = Color3.fromRGB(255,0,0), Cyan = Color3.fromRGB(0,255,255), White = Color3.fromRGB(255,255,255) }
+    MapESPColors.Generator = map[v] or Color3.fromRGB(255,255,0)
+end })
+VisualTab:Toggle({ Title = "Generator Name & Progress", Default = true, Callback = function(v) MapESPConfig.GeneratorName = v end })
+VisualTab:Dropdown({ Title = "Gen Done Color", Values = {"Green", "Blue", "Cyan", "White"}, Default = "Green", Callback = function(v) 
+    local map = { Green = Color3.fromRGB(0,255,0), Blue = Color3.fromRGB(0,0,255), Cyan = Color3.fromRGB(0,255,255), White = Color3.fromRGB(255,255,255) }
+    MapESPColors.GeneratorDone = map[v] or Color3.fromRGB(0,255,0)
+end })
+
+VisualTab:Toggle({ Title = "Pallet ESP", Default = false, Callback = function(v) MapESPConfig.Pallet = v end })
+VisualTab:Dropdown({ Title = "Warna Pallet", Values = {"Cyan", "Red", "Green", "Yellow", "White"}, Default = "Cyan", Callback = function(v) 
+    local map = { Cyan = Color3.fromRGB(60,255,255), Red = Color3.fromRGB(255,0,0), Green = Color3.fromRGB(0,255,0), Yellow = Color3.fromRGB(255,255,0), White = Color3.fromRGB(255,255,255) }
+    MapESPColors.Pallet = map[v] or Color3.fromRGB(60,255,255)
+end })
+
+VisualTab:Toggle({ Title = "Window ESP", Default = false, Callback = function(v) MapESPConfig.Window = v end })
+VisualTab:Dropdown({ Title = "Warna Window", Values = {"Cyan", "Red", "Green", "Yellow", "White"}, Default = "Cyan", Callback = function(v) 
+    local map = { Cyan = Color3.fromRGB(60,255,255), Red = Color3.fromRGB(255,0,0), Green = Color3.fromRGB(0,255,0), Yellow = Color3.fromRGB(255,255,0), White = Color3.fromRGB(255,255,255) }
+    MapESPColors.Window = map[v] or Color3.fromRGB(60,255,255)
+end })
+
+VisualTab:Toggle({ Title = "Hook ESP", Default = false, Callback = function(v) MapESPConfig.Hook = v end })
+VisualTab:Dropdown({ Title = "Warna Hook", Values = {"Pink", "Red", "Green", "Yellow", "White"}, Default = "Pink", Callback = function(v) 
+    local map = { Pink = Color3.fromRGB(255,105,180), Red = Color3.fromRGB(255,0,0), Green = Color3.fromRGB(0,255,0), Yellow = Color3.fromRGB(255,255,0), White = Color3.fromRGB(255,255,255) }
+    MapESPColors.Hook = map[v] or Color3.fromRGB(255,105,180)
+end })
+
+VisualTab:Toggle({ Title = "Gate ESP", Default = false, Callback = function(v) MapESPConfig.Gate = v end })
+VisualTab:Dropdown({ Title = "Warna Gate", Values = {"White", "Red", "Green", "Yellow", "Cyan"}, Default = "White", Callback = function(v) 
+    local map = { White = Color3.fromRGB(255,255,255), Red = Color3.fromRGB(255,0,0), Green = Color3.fromRGB(0,255,0), Yellow = Color3.fromRGB(255,255,0), Cyan = Color3.fromRGB(0,255,255) }
+    MapESPColors.Gate = map[v] or Color3.fromRGB(255,255,255)
+end })
 
 --==========================================================================
 --  BOOT / INTRO
