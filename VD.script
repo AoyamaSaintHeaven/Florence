@@ -700,6 +700,56 @@ local function buildAura(gui, target, cfg, visibleFn)
     gui.Destroying:Connect(function() if conn then conn:Disconnect() end end)
 end
 
+-- matrix "decode" text: random code scrambles, then locks in letter by letter.
+-- Only runs while Play() is called, and does nothing between plays (no idle cost).
+local DEC_GLYPHS = {}
+for ch in ("01ABCDEFXYZ#$%*+=?/|[]{}"):gmatch(".") do DEC_GLYPHS[#DEC_GLYPHS + 1] = ch end
+local function decHex(c)
+    return string.format("#%02X%02X%02X", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+end
+local DEC_DIM, DEC_HOT, DEC_DONE = decHex(Color3.fromRGB(24, 120, 58)), decHex(T.Accent), decHex(T.Text)
+local function decPaint(ch, color) return '<font color="' .. color .. '">' .. ch .. "</font>" end
+
+local function makeDecoder(lbl, text, prefix, size)
+    prefix = prefix or ""
+    lbl.Font = Enum.Font.Code      -- monospaced, so the width never jitters
+    lbl.RichText = true
+    if size then lbl.TextSize = size end
+    local token, decoding = 0, false
+    local dec = {}
+    function dec.Rest() lbl.Text = prefix .. decPaint(text, DEC_DONE) end
+    function dec.IsPlaying() return decoding end
+    function dec.Play()
+        token += 1
+        local my = token
+        decoding = true
+        task.spawn(function()
+            local n, t0 = #text, os.clock()
+            local SCRAMBLE, STEP = 0.30, 0.075      -- full-noise time, then seconds per letter
+            while my == token and lbl.Parent do
+                local locked = math.floor((os.clock() - t0 - SCRAMBLE) / STEP)
+                if locked >= n then break end
+                local out = table.create(n)
+                for i = 1, n do
+                    local ch = text:sub(i, i)
+                    if ch == " " then
+                        out[i] = " "
+                    elseif i <= locked then
+                        out[i] = decPaint(ch, (i == locked) and "#FFFFFF" or DEC_DONE)
+                    else
+                        out[i] = decPaint(DEC_GLYPHS[math.random(#DEC_GLYPHS)], (i <= locked + 3) and DEC_HOT or DEC_DIM)
+                    end
+                end
+                lbl.Text = prefix .. table.concat(out)
+                task.wait(0.04)
+            end
+            if my == token then dec.Rest(); decoding = false end
+        end)
+    end
+    dec.Rest()
+    return dec
+end
+
 function WindStyle:CreateWindow(opts)
     opts = opts or {}
     local title    = opts.Title or "My Hub"
@@ -729,7 +779,7 @@ function WindStyle:CreateWindow(opts)
     local textW = 100
     pcall(function()
         textW = game:GetService("TextService"):GetTextSize(
-            pillLabel, 12, Enum.Font.GothamBold, Vector2.new(1000, 20)).X
+            pillLabel, 12, opts.PillText and Enum.Font.GothamBold or Enum.Font.Code, Vector2.new(1000, 20)).X
     end)
     pill.Size = UDim2.fromOffset(math.clamp(math.ceil(textW) + 62, 120, 280), 40)
     round(pill, 20); stroke(pill, Color3.fromRGB(58, 58, 64))
@@ -741,6 +791,7 @@ function WindStyle:CreateWindow(opts)
     round(pillIcon, 14)
     stroke(pillIcon, T.Accent)
     local pillText = label(pill, pillLabel, 12, T.Text, Enum.Font.GothamBold)
+    local pillDec = (not opts.PillText) and makeDecoder(pillText, title, "\226\154\161 ", 12) or nil
     pillText.Position = UDim2.fromOffset(42, 0)
     pillText.Size = UDim2.new(1, -54, 1, 0)
     pillText.TextTruncate = Enum.TextTruncate.AtEnd
@@ -782,6 +833,8 @@ function WindStyle:CreateWindow(opts)
     local titleL = label(titleRow, title, 13, T.Text, Enum.Font.GothamBold)
     titleL.Size = UDim2.fromOffset(0, 20); titleL.AutomaticSize = Enum.AutomaticSize.X
     titleL.LayoutOrder = 1
+
+    local titleDec = makeDecoder(titleL, title, "", 14)
 
     local chip = new("TextLabel", { BackgroundColor3 = Color3.fromRGB(32, 32, 34), Text = subtitle,
         TextColor3 = T.Sub, TextSize = 11, Font = Enum.Font.GothamMedium,
@@ -882,6 +935,7 @@ function WindStyle:CreateWindow(opts)
         tween(pillScale, CLOSE_INFO, { Scale = 0 }).Completed:Wait()
         pill.Visible = false
         win.Visible = true
+        titleDec.Play()
         winScale.Scale, win.GroupTransparency = 0.85, 1
         tween(winScale, info, { Scale = 1 })
         tween(win, info, { GroupTransparency = 0 }).Completed:Wait()
@@ -896,9 +950,23 @@ function WindStyle:CreateWindow(opts)
         win.Visible = false
         pill.Visible = true
         pillScale.Scale = 0
+        if pillDec then pillDec.Play() end
         tween(pillScale, OPEN_INFO, { Scale = 1 }).Completed:Wait()
         isOpen, busy = false, false
     end
+
+    -- replay the decode every 10 seconds on whichever one is on screen
+    local DECODE_EVERY = 10
+    task.spawn(function()
+        while gui.Parent do
+            task.wait(DECODE_EVERY)
+            if win.Visible then
+                if not titleDec.IsPlaying() then titleDec.Play() end
+            elseif pill.Visible and pillDec then
+                if not pillDec.IsPlaying() then pillDec.Play() end
+            end
+        end
+    end)
 
     ------------------------------------------------------------ confirm dialog
     local dim = new("TextButton", {
@@ -2139,6 +2207,8 @@ end
 
 local MainTab = Win:Tab("Main", "rbxassetid://121572094465765")
 
+local AimbotConfig -- forward declaration (filled in further down)
+
 MainTab:Section({ Title = "Weapon" })
 
 MainTab:Toggle({
@@ -2166,10 +2236,117 @@ MainTab:Button({
     end,
 })
 
+MainTab:Toggle({ Title = "Enable Aimbot", Default = false, Callback = function(v) AimbotConfig.Enabled = v end })
+
 --==========================================================================
 --  PLAYERS TAB
 --==========================================================================
 local PlayerTab = Win:Tab("ESP", "rbxassetid://121572094465765")
+
+local MapESPConfig -- forward declaration (filled in further down)
+
+-- Player ESP Configuration
+local ESPConfig = {
+    Player = false,
+    Name = false,
+    Distance = false,
+    MaxDistance = 100,
+    PlayerColor = Color3.fromRGB(60, 255, 60),
+    FillTransparency = 1,    -- driven by the Transparency sliders (same as slider defaults)
+    OutlineTransparency = 0,
+}
+
+-- Update ESP Loop
+local function UpdatePlayerESP()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local char = player.Character
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local localChar = LocalPlayer.Character
+            
+            if hum and root and hum.Health > 0 and localChar and localChar:FindFirstChild("HumanoidRootPart") then
+                local dist = (localChar.HumanoidRootPart.Position - root.Position).Magnitude
+                local isKiller = player.Team and player.Team.Name == "Killer"
+                
+                local shouldShow = false
+                local color = ESPConfig.PlayerColor
+                
+                if ESPConfig.Player and dist <= ESPConfig.MaxDistance then
+                    if not isKiller then
+                        shouldShow = true
+                    end
+                end
+                
+                if shouldShow then
+                    -- Highlight
+                    local hl = char:FindFirstChild("PlayerESP_Highlight")
+                    if not hl then
+                        hl = Instance.new("Highlight")
+                        hl.Name = "PlayerESP_Highlight"
+                        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        hl.Parent = char
+                    end
+                    hl.FillColor = color
+                    hl.OutlineColor = color
+                    hl.FillTransparency = ESPConfig.FillTransparency
+                    hl.OutlineTransparency = ESPConfig.OutlineTransparency
+                    
+                    -- Billboard
+                    if ESPConfig.Name or ESPConfig.Distance then
+                        local bb = char:FindFirstChild("PlayerESP_Billboard")
+                        if not bb then
+                            bb = Instance.new("BillboardGui")
+                            bb.Name = "PlayerESP_Billboard"
+                            bb.AlwaysOnTop = true
+                            bb.Size = UDim2.new(0, 200, 0, 50)
+                            bb.StudsOffset = Vector3.new(0, 3, 0)
+                            bb.Parent = char
+                            
+                            local txt = Instance.new("TextLabel")
+                            txt.Name = "ESPText"
+                            txt.BackgroundTransparency = 1
+                            txt.Size = UDim2.fromScale(1, 1)
+                            txt.Font = Enum.Font.GothamBold
+                            txt.TextSize = 14
+                            txt.TextStrokeTransparency = 0
+                            txt.Parent = bb
+                        end
+                        
+                        local txt = bb:FindFirstChild("ESPText")
+                        if txt then
+                            local textStr = ""
+                            if ESPConfig.Name then
+                                textStr = player.Name
+                            end
+                            if ESPConfig.Distance then
+                                if textStr ~= "" then textStr = textStr .. " " end
+                                textStr = textStr .. "[" .. math.floor(dist) .. "m]"
+                            end
+                            txt.Text = textStr
+                            txt.TextColor3 = color
+                        end
+                    else
+                        local bb = char:FindFirstChild("PlayerESP_Billboard")
+                        if bb then bb:Destroy() end
+                    end
+                else
+                    local hl = char:FindFirstChild("PlayerESP_Highlight")
+                    if hl then hl:Destroy() end
+                    local bb = char:FindFirstChild("PlayerESP_Billboard")
+                    if bb then bb:Destroy() end
+                end
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        UpdatePlayerESP()
+    end
+end)
 
 local statusParagraph = PlayerTab:Paragraph({
     Title = "Scanner Status",
@@ -2202,16 +2379,6 @@ function refreshResultsList()
     end
 end
 
-PlayerTab:Toggle({
-    Title = "ESP Highlight",
-    Desc  = "Show highlight on flagged models",
-    Default = true,
-    Callback = function(state)
-        setESPEnabled(state)
-        setStatus(state and "ESP enabled" or "ESP disabled", state and Green or Grey)
-    end,
-})
-
 PlayerTab:Button({
     Title = "Rescan Now",
     Desc  = "Run a full scan immediately",
@@ -2228,9 +2395,38 @@ PlayerTab:Button({
     end,
 })
 
-PlayerTab:Section({ Title = "ESP Customizer" })
+PlayerTab:Toggle({
+    Title = "Killer ESP",
+    Desc  = "Show highlight on flagged models",
+    Default = true,
+    Callback = function(state)
+        setESPEnabled(state)
+        setStatus(state and "ESP enabled" or "ESP disabled", state and Green or Grey)
+    end,
+})
 
-PlayerTab:Dropdown({
+PlayerTab:Toggle({ Title = "Survivor ESP", Default = false, Callback = function(v) ESPConfig.Player = v end })
+
+PlayerTab:Toggle({ Title = "Generator ESP", Default = false, Callback = function(v) MapESPConfig.Generator = v end })
+
+-- SubPage for ESP Settings
+local ESPSubPage = PlayerTab:SubPage({
+    Title = "ESP Settings",
+    Desc  = "Configure Survivor ESP features"
+})
+
+ESPSubPage:Section({ Title = "Survivor ESP Settings" })
+ESPSubPage:Dropdown({ Title = "Warna Survivor ESP", Values = {"Green", "Red", "Blue", "White"}, Default = "Green", Callback = function(v) 
+    local map = { Green = Color3.fromRGB(60,255,60), Red = Color3.fromRGB(255,0,0), Blue = Color3.fromRGB(0,255,255), White = Color3.fromRGB(255,255,255) }
+    ESPConfig.PlayerColor = map[v] or Color3.fromRGB(60,255,60)
+end })
+ESPSubPage:Slider({ Title = "ESP Max Distance", Min = 50, Max = 2000, Default = 100, Callback = function(v) ESPConfig.MaxDistance = v end })
+ESPSubPage:Toggle({ Title = "ESP Name", Default = false, Callback = function(v) ESPConfig.Name = v end })
+ESPSubPage:Toggle({ Title = "ESP Distance", Default = false, Callback = function(v) ESPConfig.Distance = v end })
+
+ESPSubPage:Section({ Title = "ESP Customizer" })
+
+ESPSubPage:Dropdown({
     Title = "ESP Color",
     Values = { "Red", "Green", "Blue", "Pink", "Yellow", "White" },
     Default = "Red",
@@ -2248,7 +2444,7 @@ PlayerTab:Dropdown({
     end,
 })
 
-PlayerTab:Button({
+ESPSubPage:Button({
     Title = "Preset: Red",
     Callback = function()
         applyColor(Color3.fromRGB(255, 45, 45))
@@ -2256,7 +2452,7 @@ PlayerTab:Button({
     end,
 })
 
-PlayerTab:Button({
+ESPSubPage:Button({
     Title = "Preset: Green",
     Callback = function()
         applyColor(Color3.fromRGB(45, 220, 90))
@@ -2264,7 +2460,7 @@ PlayerTab:Button({
     end,
 })
 
-PlayerTab:Button({
+ESPSubPage:Button({
     Title = "Preset: Blue",
     Callback = function()
         applyColor(Color3.fromRGB(60, 130, 255))
@@ -2272,7 +2468,7 @@ PlayerTab:Button({
     end,
 })
 
-PlayerTab:Button({
+ESPSubPage:Button({
     Title = "Preset: Pink",
     Callback = function()
         applyColor(Color3.fromRGB(255, 90, 200))
@@ -2280,20 +2476,26 @@ PlayerTab:Button({
     end,
 })
 
-PlayerTab:Section({ Title = "Transparency" })
+ESPSubPage:Section({ Title = "Transparency" })
 
-PlayerTab:Slider({
+ESPSubPage:Slider({
     Title = "Fill Transparency",
-    Desc  = "0% = solid  •  100% = invisible",
+    Desc  = "0% = solid  •  100% = invisible  (killer + survivor ESP)",
     Min = 0, Max = 100, Default = 100,
-    Callback = function(v) applyFillAlpha(v / 100) end,
+    Callback = function(v)
+        applyFillAlpha(v / 100)               -- killer ESP
+        ESPConfig.FillTransparency = v / 100  -- survivor ESP
+    end,
 })
 
-PlayerTab:Slider({
+ESPSubPage:Slider({
     Title = "Outline Transparency",
-    Desc  = "0% = solid  •  100% = invisible",
+    Desc  = "0% = solid  •  100% = invisible  (killer + survivor ESP)",
     Min = 0, Max = 100, Default = 0,
-    Callback = function(v) applyOutlineAlpha(v / 100) end,
+    Callback = function(v)
+        applyOutlineAlpha(v / 100)               -- killer ESP
+        ESPConfig.OutlineTransparency = v / 100  -- survivor ESP
+    end,
 })
 
 --==========================================================================
@@ -2528,7 +2730,7 @@ local listHolder = PlayersTab:Custom(CARD_H * CARD_ROWS + CARD_GAP * (CARD_ROWS 
 local listScroll = new("ScrollingFrame", {
     Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0,
     ScrollBarThickness = 2, ScrollBarImageColor3 = T.Stroke,
-    AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
+AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
 }, listHolder)
 new("UIGridLayout", { CellSize = UDim2.new(0.5, -4, 0, CARD_H), CellPadding = UDim2.fromOffset(6, 6),
     SortOrder = Enum.SortOrder.LayoutOrder }, listScroll)
@@ -3007,7 +3209,7 @@ local laserPart = nil
 -- ||======================================================================||
 -- || CONFIGURATIONS                                                       ||
 -- ||======================================================================||
-local AimbotConfig = {
+AimbotConfig = {
     Enabled = false,
     ShowFOV = true,
     Radius = 150,
@@ -3367,138 +3569,40 @@ end
 -- || UI BINDINGS - ADDED TO MAIN TAB                                      ||
 -- ||======================================================================||
 
-MainTab:Section({ Title = "Survivor Aimbot" })
-MainTab:Toggle({ Title = "Enable Aimbot", Default = false, Callback = function(v) AimbotConfig.Enabled = v end })
-MainTab:Toggle({ Title = "Show FOV Circle", Default = true, Callback = function(v) AimbotConfig.ShowFOV = v end })
-MainTab:Slider({ Title = "FOV Radius", Min = 30, Max = 500, Default = 150, Callback = function(v) AimbotConfig.Radius = v end })
-MainTab:Slider({ Title = "FOV Transparency", Desc = "0% = Solid, 100% = Invisible", Min = 0, Max = 100, Default = 0, Callback = function(v) AimbotConfig.FOVTransparency = v / 100 end })
-MainTab:Slider({ Title = "Max Distance", Min = 50, Max = 1000, Default = 300, Callback = function(v) AimbotConfig.MaxDist = v end })
-MainTab:Slider({ Title = "Smoothness", Min = 0.1, Max = 1, Default = 0.5, Callback = function(v) AimbotConfig.Smoothness = v end })
-MainTab:Slider({ Title = "Predict Offset", Min = 0, Max = 0.1, Default = 0.01, Callback = function(v) AimbotConfig.Predict = v end })
-MainTab:Dropdown({ Title = "Target Part", Values = { "Torso", "Head", "Root" }, Default = "Torso", Callback = function(v) AimbotConfig.TargetPart = v end })
+-- Survivor Aimbot (and Silent Aim) live on their own sub page
+local AimbotPage = MainTab:SubPage({
+    Title = "Survivor Aimbot",
+    Desc  = "Aimbot, FOV circle, smoothing, wallcheck and Silent Aim",
+})
+
+AimbotPage:Section({ Title = "Survivor Aimbot" })
+AimbotPage:Toggle({ Title = "Show FOV Circle", Default = true, Callback = function(v) AimbotConfig.ShowFOV = v end })
+AimbotPage:Slider({ Title = "FOV Radius", Min = 30, Max = 500, Default = 150, Callback = function(v) AimbotConfig.Radius = v end })
+AimbotPage:Slider({ Title = "FOV Transparency", Desc = "0% = Solid, 100% = Invisible", Min = 0, Max = 100, Default = 0, Callback = function(v) AimbotConfig.FOVTransparency = v / 100 end })
+AimbotPage:Slider({ Title = "Max Distance", Min = 50, Max = 1000, Default = 300, Callback = function(v) AimbotConfig.MaxDist = v end })
+AimbotPage:Slider({ Title = "Smoothness", Min = 0.1, Max = 1, Default = 0.5, Callback = function(v) AimbotConfig.Smoothness = v end })
+AimbotPage:Slider({ Title = "Predict Offset", Min = 0, Max = 0.1, Default = 0.01, Callback = function(v) AimbotConfig.Predict = v end })
+AimbotPage:Dropdown({ Title = "Target Part", Values = { "Torso", "Head", "Root" }, Default = "Torso", Callback = function(v) AimbotConfig.TargetPart = v end })
 -- Added Wallcheck to Survivor Aimbot UI
-MainTab:Toggle({ Title = "Wallcheck (Aimbot)", Default = false, Callback = function(v) AimbotConfig.Wallcheck = v end })
+AimbotPage:Toggle({ Title = "Wallcheck (Aimbot)", Default = false, Callback = function(v) AimbotConfig.Wallcheck = v end })
 
-MainTab:Section({ Title = "Silent Aim (Pistol)" })
-MainTab:Toggle({ Title = "Silent Aim Twist Of Fate", Default = false, Callback = function(v) PistolConfig.Enabled = v end })
-MainTab:Toggle({ Title = "Predict Aim ToF", Default = false, Callback = function(v) PistolConfig.Predict = v end })
-MainTab:Toggle({ Title = "Block aim Knocked", Default = false, Callback = function(v) PistolConfig.BlockKnocked = v end })
-MainTab:Toggle({ Title = "Block Peluru (TOF)", Default = false, Callback = function(v) PistolConfig.BlockBullet = v end })
-MainTab:Toggle({ Title = "Lock Aim (Twist Of Fate)", Default = false, Callback = function(v) PistolConfig.LockAim = v end })
-MainTab:Toggle({ Title = "Wallcheck (Silent Aim)", Default = false, Callback = function(v) PistolConfig.Wallcheck = v end })
-MainTab:Toggle({ Title = "Enable Laser Effect", Default = true, Callback = function(v) PistolConfig.Laser = v end })
-MainTab:Toggle({ Title = "Silent Aim Flashlight", Default = false, Callback = function(v) PistolConfig.Flash = v end })
+AimbotPage:Section({ Title = "Silent Aim (Pistol)" })
+AimbotPage:Toggle({ Title = "Silent Aim Twist Of Fate", Default = false, Callback = function(v) PistolConfig.Enabled = v end })
+AimbotPage:Toggle({ Title = "Predict Aim ToF", Default = false, Callback = function(v) PistolConfig.Predict = v end })
+AimbotPage:Toggle({ Title = "Block aim Knocked", Default = false, Callback = function(v) PistolConfig.BlockKnocked = v end })
+AimbotPage:Toggle({ Title = "Block Peluru (TOF)", Default = false, Callback = function(v) PistolConfig.BlockBullet = v end })
+AimbotPage:Toggle({ Title = "Lock Aim (Twist Of Fate)", Default = false, Callback = function(v) PistolConfig.LockAim = v end })
+AimbotPage:Toggle({ Title = "Wallcheck (Silent Aim)", Default = false, Callback = function(v) PistolConfig.Wallcheck = v end })
+AimbotPage:Toggle({ Title = "Enable Laser Effect", Default = true, Callback = function(v) PistolConfig.Laser = v end })
+AimbotPage:Toggle({ Title = "Silent Aim Flashlight", Default = false, Callback = function(v) PistolConfig.Flash = v end })
 
 --==========================================================================
---  VISUAL TAB (MAP ESP & PLAYER ESP SETTINGS)
+--  MAP ESP (subpage on the ESP tab)
 --==========================================================================
-local VisualTab = Win:Tab("Visual", "rbxassetid://121572094465765")
-
--- Player ESP Configuration
-local ESPConfig = {
-    Master = false,
-    Player = false,
-    Name = false,
-    Distance = false,
-    MaxDistance = 100,
-    PlayerColor = Color3.fromRGB(60, 255, 60)
-}
-
--- Update ESP Loop
-local function UpdatePlayerESP()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local char = player.Character
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            local root = char:FindFirstChild("HumanoidRootPart")
-            local localChar = LocalPlayer.Character
-            
-            if hum and root and hum.Health > 0 and localChar and localChar:FindFirstChild("HumanoidRootPart") then
-                local dist = (localChar.HumanoidRootPart.Position - root.Position).Magnitude
-                local isKiller = player.Team and player.Team.Name == "Killer"
-                
-                local shouldShow = false
-                local color = ESPConfig.PlayerColor
-                
-                if ESPConfig.Master and dist <= ESPConfig.MaxDistance then
-                    -- Only target Survivors now
-                    if not isKiller and ESPConfig.Player then
-                        shouldShow = true
-                    end
-                end
-                
-                if shouldShow then
-                    -- Highlight
-                    local hl = char:FindFirstChild("PlayerESP_Highlight")
-                    if not hl then
-                        hl = Instance.new("Highlight")
-                        hl.Name = "PlayerESP_Highlight"
-                        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                        hl.Parent = char
-                    end
-                    hl.FillColor = color
-                    hl.OutlineColor = color
-                    hl.FillTransparency = 0.5
-                    hl.OutlineTransparency = 0
-                    
-                    -- Billboard
-                    if ESPConfig.Name or ESPConfig.Distance then
-                        local bb = char:FindFirstChild("PlayerESP_Billboard")
-                        if not bb then
-                            bb = Instance.new("BillboardGui")
-                            bb.Name = "PlayerESP_Billboard"
-                            bb.AlwaysOnTop = true
-                            bb.Size = UDim2.new(0, 200, 0, 50)
-                            bb.StudsOffset = Vector3.new(0, 3, 0)
-                            bb.Parent = char
-                            
-                            local txt = Instance.new("TextLabel")
-                            txt.Name = "ESPText"
-                            txt.BackgroundTransparency = 1
-                            txt.Size = UDim2.fromScale(1, 1)
-                            txt.Font = Enum.Font.GothamBold
-                            txt.TextSize = 14
-                            txt.TextStrokeTransparency = 0
-                            txt.Parent = bb
-                        end
-                        
-                        local txt = bb:FindFirstChild("ESPText")
-                        if txt then
-                            local textStr = ""
-                            if ESPConfig.Name then
-                                textStr = player.Name
-                            end
-                            if ESPConfig.Distance then
-                                if textStr ~= "" then textStr = textStr .. " " end
-                                textStr = textStr .. "[" .. math.floor(dist) .. "m]"
-                            end
-                            txt.Text = textStr
-                            txt.TextColor3 = color
-                        end
-                    else
-                        local bb = char:FindFirstChild("PlayerESP_Billboard")
-                        if bb then bb:Destroy() end
-                    end
-                else
-                    local hl = char:FindFirstChild("PlayerESP_Highlight")
-                    if hl then hl:Destroy() end
-                    local bb = char:FindFirstChild("PlayerESP_Billboard")
-                    if bb then bb:Destroy() end
-                end
-            end
-        end
-    end
-end
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        UpdatePlayerESP()
-    end
-end)
+-- (Visual tab removed: Map ESP now lives on the ESP tab)
 
 -- Map ESP Configuration
-local MapESPConfig = {
+MapESPConfig = {
     Generator = false,
     GeneratorName = true,
     Pallet = false,
@@ -3791,55 +3895,45 @@ task.spawn(function()
     end
 end)
 
--- UI Bindings for Player ESP
-VisualTab:Section({ Title = "ESP Settings" })
-
-VisualTab:Toggle({ Title = "Enable ESP", Default = false, Callback = function(v) ESPConfig.Master = v end })
-VisualTab:Slider({ Title = "ESP Max Distance", Min = 50, Max = 2000, Default = 100, Callback = function(v) ESPConfig.MaxDistance = v end })
-
-VisualTab:Toggle({ Title = "Player ESP", Default = false, Callback = function(v) ESPConfig.Player = v end })
-VisualTab:Dropdown({ Title = "Warna Player ESP", Values = {"Green", "Red", "Blue", "White"}, Default = "Green", Callback = function(v) 
-    local map = { Green = Color3.fromRGB(60,255,60), Red = Color3.fromRGB(255,0,0), Blue = Color3.fromRGB(0,255,255), White = Color3.fromRGB(255,255,255) }
-    ESPConfig.PlayerColor = map[v] or Color3.fromRGB(60,255,60)
-end })
-
-VisualTab:Toggle({ Title = "ESP Name", Default = false, Callback = function(v) ESPConfig.Name = v end })
-VisualTab:Toggle({ Title = "ESP Distance", Default = false, Callback = function(v) ESPConfig.Distance = v end })
-
 -- UI Bindings for Map ESP
-VisualTab:Section({ Title = "Map ESP" })
+-- Map ESP lives on its own sub page (button on the ESP tab opens it, with a Back button)
+local MapESPPage = PlayerTab:SubPage({
+    Title = "Map ESP",
+    Desc  = "Generator, pallet, window, hook and gate ESP",
+})
 
-VisualTab:Toggle({ Title = "Generator ESP", Default = false, Callback = function(v) MapESPConfig.Generator = v end })
-VisualTab:Dropdown({ Title = "Warna Generator", Values = {"Yellow", "Green", "Red", "Cyan", "White"}, Default = "Yellow", Callback = function(v) 
+MapESPPage:Section({ Title = "Map ESP" })
+
+MapESPPage:Dropdown({ Title = "Warna Generator", Values = {"Yellow", "Green", "Red", "Cyan", "White"}, Default = "Yellow", Callback = function(v) 
     local map = { Yellow = Color3.fromRGB(255,255,0), Green = Color3.fromRGB(0,255,0), Red = Color3.fromRGB(255,0,0), Cyan = Color3.fromRGB(0,255,255), White = Color3.fromRGB(255,255,255) }
     MapESPColors.Generator = map[v] or Color3.fromRGB(255,255,0)
 end })
-VisualTab:Toggle({ Title = "Generator Name & Progress", Default = true, Callback = function(v) MapESPConfig.GeneratorName = v end })
-VisualTab:Dropdown({ Title = "Gen Done Color", Values = {"Green", "Blue", "Cyan", "White"}, Default = "Green", Callback = function(v) 
+MapESPPage:Toggle({ Title = "Generator Name & Progress", Default = true, Callback = function(v) MapESPConfig.GeneratorName = v end })
+MapESPPage:Dropdown({ Title = "Gen Done Color", Values = {"Green", "Blue", "Cyan", "White"}, Default = "Green", Callback = function(v) 
     local map = { Green = Color3.fromRGB(0,255,0), Blue = Color3.fromRGB(0,0,255), Cyan = Color3.fromRGB(0,255,255), White = Color3.fromRGB(255,255,255) }
     MapESPColors.GeneratorDone = map[v] or Color3.fromRGB(0,255,0)
 end })
 
-VisualTab:Toggle({ Title = "Pallet ESP", Default = false, Callback = function(v) MapESPConfig.Pallet = v end })
-VisualTab:Dropdown({ Title = "Warna Pallet", Values = {"Cyan", "Red", "Green", "Yellow", "White"}, Default = "Cyan", Callback = function(v) 
+MapESPPage:Toggle({ Title = "Pallet ESP", Default = false, Callback = function(v) MapESPConfig.Pallet = v end })
+MapESPPage:Dropdown({ Title = "Warna Pallet", Values = {"Cyan", "Red", "Green", "Yellow", "White"}, Default = "Cyan", Callback = function(v) 
     local map = { Cyan = Color3.fromRGB(60,255,255), Red = Color3.fromRGB(255,0,0), Green = Color3.fromRGB(0,255,0), Yellow = Color3.fromRGB(255,255,0), White = Color3.fromRGB(255,255,255) }
     MapESPColors.Pallet = map[v] or Color3.fromRGB(60,255,255)
 end })
 
-VisualTab:Toggle({ Title = "Window ESP", Default = false, Callback = function(v) MapESPConfig.Window = v end })
-VisualTab:Dropdown({ Title = "Warna Window", Values = {"Cyan", "Red", "Green", "Yellow", "White"}, Default = "Cyan", Callback = function(v) 
+MapESPPage:Toggle({ Title = "Window ESP", Default = false, Callback = function(v) MapESPConfig.Window = v end })
+MapESPPage:Dropdown({ Title = "Warna Window", Values = {"Cyan", "Red", "Green", "Yellow", "White"}, Default = "Cyan", Callback = function(v) 
     local map = { Cyan = Color3.fromRGB(60,255,255), Red = Color3.fromRGB(255,0,0), Green = Color3.fromRGB(0,255,0), Yellow = Color3.fromRGB(255,255,0), White = Color3.fromRGB(255,255,255) }
     MapESPColors.Window = map[v] or Color3.fromRGB(60,255,255)
 end })
 
-VisualTab:Toggle({ Title = "Hook ESP", Default = false, Callback = function(v) MapESPConfig.Hook = v end })
-VisualTab:Dropdown({ Title = "Warna Hook", Values = {"Pink", "Red", "Green", "Yellow", "White"}, Default = "Pink", Callback = function(v) 
+MapESPPage:Toggle({ Title = "Hook ESP", Default = false, Callback = function(v) MapESPConfig.Hook = v end })
+MapESPPage:Dropdown({ Title = "Warna Hook", Values = {"Pink", "Red", "Green", "Yellow", "White"}, Default = "Pink", Callback = function(v) 
     local map = { Pink = Color3.fromRGB(255,105,180), Red = Color3.fromRGB(255,0,0), Green = Color3.fromRGB(0,255,0), Yellow = Color3.fromRGB(255,255,0), White = Color3.fromRGB(255,255,255) }
     MapESPColors.Hook = map[v] or Color3.fromRGB(255,105,180)
 end })
 
-VisualTab:Toggle({ Title = "Gate ESP", Default = false, Callback = function(v) MapESPConfig.Gate = v end })
-VisualTab:Dropdown({ Title = "Warna Gate", Values = {"White", "Red", "Green", "Yellow", "Cyan"}, Default = "White", Callback = function(v) 
+MapESPPage:Toggle({ Title = "Gate ESP", Default = false, Callback = function(v) MapESPConfig.Gate = v end })
+MapESPPage:Dropdown({ Title = "Warna Gate", Values = {"White", "Red", "Green", "Yellow", "Cyan"}, Default = "White", Callback = function(v) 
     local map = { White = Color3.fromRGB(255,255,255), Red = Color3.fromRGB(255,0,0), Green = Color3.fromRGB(0,255,0), Yellow = Color3.fromRGB(255,255,0), Cyan = Color3.fromRGB(0,255,255) }
     MapESPColors.Gate = map[v] or Color3.fromRGB(255,255,255)
 end })
